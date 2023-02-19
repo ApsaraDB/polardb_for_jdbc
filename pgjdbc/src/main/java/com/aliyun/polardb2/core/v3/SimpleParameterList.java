@@ -527,7 +527,9 @@ public class SimpleParameterList implements V3ParameterList {
 
     // Binary-format bytea?
     if (paramValue instanceof StreamWrapper) {
-      streamBytea(pgStream, (StreamWrapper) paramValue);
+      try (StreamWrapper streamWrapper = (StreamWrapper) paramValue;) {
+        streamBytea(pgStream, streamWrapper);
+      }
       return;
     }
 
