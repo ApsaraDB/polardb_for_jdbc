@@ -7,8 +7,7 @@ package com.aliyun.polardb2.jdbc;
 
 import com.aliyun.polardb2.core.Provider;
 import com.aliyun.polardb2.core.QueryExecutor;
-
-import org.checkerframework.checker.nullness.qual.Nullable;
+import com.aliyun.polardb2.util.GT;
 
 import java.util.TimeZone;
 
@@ -18,7 +17,7 @@ import java.util.TimeZone;
  * <p>It looks like {@code jandex} does not support {@code new Interface<..>} with type annotations.
  * </p>
  */
-class QueryExecutorTimeZoneProvider implements Provider<@Nullable TimeZone> {
+class QueryExecutorTimeZoneProvider implements Provider<TimeZone> {
   private final QueryExecutor queryExecutor;
 
   QueryExecutorTimeZoneProvider(QueryExecutor queryExecutor) {
@@ -26,7 +25,14 @@ class QueryExecutorTimeZoneProvider implements Provider<@Nullable TimeZone> {
   }
 
   @Override
-  public @Nullable TimeZone get() {
-    return queryExecutor.getTimeZone();
+  public TimeZone get() {
+    TimeZone timeZone = queryExecutor.getTimeZone();
+    if (timeZone == null) {
+      throw new IllegalStateException(
+          GT.tr("Backend timezone is not known. Backend should have returned TimeZone when "
+              + "establishing a connection")
+      );
+    }
+    return timeZone;
   }
 }

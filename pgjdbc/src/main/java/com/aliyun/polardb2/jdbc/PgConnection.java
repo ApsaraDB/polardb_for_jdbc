@@ -33,6 +33,7 @@ import com.aliyun.polardb2.replication.PGReplicationConnection;
 import com.aliyun.polardb2.replication.PGReplicationConnectionImpl;
 import com.aliyun.polardb2.util.GT;
 import com.aliyun.polardb2.util.HostSpec;
+import com.aliyun.polardb2.util.LazyCleaner;
 import com.aliyun.polardb2.util.LruCache;
 import com.aliyun.polardb2.util.PGBinaryObject;
 import com.aliyun.polardb2.util.PGobject;
@@ -142,7 +143,8 @@ public class PgConnection implements BaseConnection {
    * Moving .finalize() to a different object allows JVM to release all the other objects
    * referenced in PgConnection early.
    */
-  private final PgConnectionFinalizeAction finalizeAction;
+  private final PgConnectionCleaningAction finalizeAction;
+  private final Object leakHandle = new Object();
 
   /* Actual network handler */
   private final QueryExecutor queryExecutor;
@@ -223,6 +225,7 @@ public class PgConnection implements BaseConnection {
 
   private final @Nullable String xmlFactoryFactoryClass;
   private @Nullable PGXmlFactoryFactory xmlFactoryFactory;
+  private final LazyCleaner.Cleanable<IOException> cleanable;
 
   final CachedQuery borrowQuery(String sql) throws SQLException {
     return queryExecutor.borrowQuery(sql);
@@ -257,7 +260,7 @@ public class PgConnection implements BaseConnection {
   //
   // Ctor.
   //
-  @SuppressWarnings({"method.invocation.invalid", "argument.type.incompatible"})
+  @SuppressWarnings({"method.invocation.invalid"})
   public PgConnection(HostSpec[] hostSpecs,
                       Properties info,
                       String url) throws SQLException {
@@ -357,13 +360,15 @@ public class PgConnection implements BaseConnection {
     int unknownLength = PGProperty.UNKNOWN_LENGTH.getInt(info);
 
     // Initialize object handling
-    typeCache = createTypeInfo(this, unknownLength);
+    @SuppressWarnings("argument")
+    TypeInfo typeCache = createTypeInfo(this, unknownLength);
+    this.typeCache = typeCache;
     initObjectTypes(info);
 
     if (PGProperty.LOG_UNCLOSED_CONNECTIONS.getBoolean(info)) {
       openStackTrace = new Throwable("Connection was created at this point:");
     }
-    finalizeAction = new PgConnectionFinalizeAction(lock, openStackTrace, queryExecutor.getCloseAction());
+    finalizeAction = new PgConnectionCleaningAction(lock, openStackTrace, queryExecutor.getCloseAction());
     this.logServerErrorDetail = PGProperty.LOG_SERVER_ERROR_DETAIL.getBoolean(info);
     this.disableColumnSanitiser = PGProperty.DISABLE_COLUMN_SANITISER.getBoolean(info);
 
@@ -389,9 +394,13 @@ public class PgConnection implements BaseConnection {
     replicationConnection = PGProperty.REPLICATION.getOrDefault(info) != null;
 
     xmlFactoryFactoryClass = PGProperty.XML_FACTORY_FACTORY.getOrDefault(info);
+    cleanable = LazyCleaner.getInstance().register(leakHandle, finalizeAction);
   }
 
-  private static ReadOnlyBehavior getReadOnlyBehavior(String property) {
+  private static ReadOnlyBehavior getReadOnlyBehavior(@Nullable String property) {
+    if (property == null) {
+      return ReadOnlyBehavior.transaction;
+    }
     try {
       return ReadOnlyBehavior.valueOf(property);
     } catch (IllegalArgumentException e) {
@@ -884,7 +893,7 @@ public class PgConnection implements BaseConnection {
     }
     openStackTrace = null;
     try {
-      finalizeAction.close();
+      cleanable.clean();
     } catch (IOException e) {
       throw new PSQLException(
           GT.tr("Unable to close connection properly"),
@@ -1347,10 +1356,6 @@ public class PgConnection implements BaseConnection {
 
   private Timer getTimer() {
     return finalizeAction.getTimer();
-  }
-
-  private void releaseTimer() {
-    finalizeAction.releaseTimer();
   }
 
   @Override

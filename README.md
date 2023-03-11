@@ -154,6 +154,11 @@ In addition to the standard connection parameters the driver supports a number o
 | clobAsText                    | Boolean | false  | Treat Clobs as text fields instead of as LargeObjects |
 | channelBinding                 | String |   prefer    | This option controls the client's use of channel binding. `require` means that the connection must employ channel binding, `prefer` means that the client will choose channel binding if available, and `disable` prevents the use of channel binding. |
 
+#### System Properties
+| Property                      | Type |         Default         | Description                                                                                                                                                                                                                                                                                                                                     |
+|-------------------------------| -- |:-----------------------:|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------    |
+| pgjdbc.config.cleanup.thread.ttl | long | 30000 |  The driver has an internal cleanup thread which monitors and cleans up unclosed connections. This property sets the duration (in milliseconds) the cleanup thread will keep running if there is nothing to clean up. |
+
 ## Contributing
 For information on how to contribute to the project see the [Contributing Guidelines](CONTRIBUTING.md)
 
