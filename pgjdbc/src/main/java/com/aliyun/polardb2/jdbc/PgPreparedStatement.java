@@ -137,7 +137,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
    */
   @Override
   public ResultSet executeQuery() throws SQLException {
-    synchronized (this) {
+    try (ResourceLock ignore = lock.obtain()) {
       if (!executeWithFlags(0)) {
         throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
       }
@@ -155,7 +155,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
 
   @Override
   public int executeUpdate() throws SQLException {
-    synchronized (this) {
+    try (ResourceLock ignore = lock.obtain()) {
       executeWithFlags(QueryExecutor.QUERY_NO_RESULTS);
       checkNoResultUpdate();
       return getUpdateCount();
@@ -164,7 +164,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
 
   @Override
   public long executeLargeUpdate() throws SQLException {
-    synchronized (this) {
+    try (ResourceLock ignore = lock.obtain()) {
       executeWithFlags(QueryExecutor.QUERY_NO_RESULTS);
       checkNoResultUpdate();
       return getLargeUpdateCount();
@@ -180,7 +180,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
 
   @Override
   public boolean execute() throws SQLException {
-    synchronized (this) {
+    try (ResourceLock ignore = lock.obtain()) {
       return executeWithFlags(0);
     }
   }
@@ -189,7 +189,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     UnNamedProc proc = preparedQuery.unProc;
 
     try {
-      synchronized (this) {
+      try (ResourceLock ignore = lock.obtain()) {
         checkClosed();
 
         if (connection.getPreferQueryMode() == PreferQueryMode.SIMPLE) {

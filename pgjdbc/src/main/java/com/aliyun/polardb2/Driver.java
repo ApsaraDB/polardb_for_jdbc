@@ -8,6 +8,7 @@ package com.aliyun.polardb2;
 import static com.aliyun.polardb2.util.internal.Nullness.castNonNull;
 
 import com.aliyun.polardb2.jdbc.PgConnection;
+import com.aliyun.polardb2.jdbc.ResourceLock;
 import com.aliyun.polardb2.jdbcurlresolver.PgPassParser;
 import com.aliyun.polardb2.jdbcurlresolver.PgServiceConfParser;
 import com.aliyun.polardb2.polarora.PolarDriverPrefix;
@@ -39,6 +40,7 @@ import java.util.Enumeration;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -82,39 +84,43 @@ public class Driver implements java.sql.Driver {
   // properties files.
   private @Nullable Properties defaultProperties;
 
-  private synchronized Properties getDefaultProperties() throws IOException {
-    if (defaultProperties != null) {
+  private final ResourceLock lock = new ResourceLock();
+
+  private Properties getDefaultProperties() throws IOException {
+    try (ResourceLock ignore = lock.obtain()) {
+      if (defaultProperties != null) {
+        return defaultProperties;
+      }
+
+      // Make sure we load properties with the maximum possible privileges.
+      try {
+        defaultProperties =
+            doPrivileged(new PrivilegedExceptionAction<Properties>() {
+              public Properties run() throws IOException {
+                return loadDefaultProperties();
+              }
+            });
+      } catch (PrivilegedActionException e) {
+        Exception ex = e.getException();
+        if (ex instanceof IOException) {
+          throw (IOException) ex;
+        }
+        throw new RuntimeException(e);
+      } catch (Throwable e) {
+        if (e instanceof IOException) {
+          throw (IOException) e;
+        }
+        if (e instanceof RuntimeException) {
+          throw (RuntimeException) e;
+        }
+        if (e instanceof Error) {
+          throw (Error) e;
+        }
+        throw new RuntimeException(e);
+      }
+
       return defaultProperties;
     }
-
-    // Make sure we load properties with the maximum possible privileges.
-    try {
-      defaultProperties =
-          doPrivileged(new PrivilegedExceptionAction<Properties>() {
-            public Properties run() throws IOException {
-              return loadDefaultProperties();
-            }
-          });
-    } catch (PrivilegedActionException e) {
-      Exception ex = e.getException();
-      if (ex instanceof IOException) {
-        throw (IOException) ex;
-      }
-      throw new RuntimeException(e);
-    } catch (Throwable e) {
-      if (e instanceof IOException) {
-        throw (IOException) e;
-      }
-      if (e instanceof RuntimeException) {
-        throw (RuntimeException) e;
-      }
-      if (e instanceof Error) {
-        throw (Error) e;
-      }
-      throw new RuntimeException(e);
-    }
-
-    return defaultProperties;
   }
 
   private static <T> T doPrivileged(PrivilegedExceptionAction<T> action) throws Throwable {
@@ -339,6 +345,9 @@ public class Driver implements java.sql.Driver {
    * while enforcing a login timeout.
    */
   private static class ConnectThread implements Runnable {
+    private final ResourceLock lock = new ResourceLock();
+    private final Condition lockCondition = lock.newCondition();
+
     ConnectThread(String url, Properties props) {
       this.url = url;
       this.props = props;
@@ -356,7 +365,7 @@ public class Driver implements java.sql.Driver {
         error = t;
       }
 
-      synchronized (this) {
+      try (ResourceLock ignore = lock.obtain()) {
         if (abandoned) {
           if (conn != null) {
             try {
@@ -367,7 +376,7 @@ public class Driver implements java.sql.Driver {
         } else {
           result = conn;
           resultException = error;
-          notify();
+          lockCondition.signal();
         }
       }
     }
@@ -382,7 +391,7 @@ public class Driver implements java.sql.Driver {
      */
     public Connection getResult(long timeout) throws SQLException {
       long expiry = TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) + timeout;
-      synchronized (this) {
+      try (ResourceLock ignore = lock.obtain()) {
         while (true) {
           if (result != null) {
             return result;
@@ -408,7 +417,7 @@ public class Driver implements java.sql.Driver {
           }
 
           try {
-            wait(delay);
+            lockCondition.await(delay, TimeUnit.MILLISECONDS);
           } catch (InterruptedException ie) {
 
             // reset the interrupt flag
