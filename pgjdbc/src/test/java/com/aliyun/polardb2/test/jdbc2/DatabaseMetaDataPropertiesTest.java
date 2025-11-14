@@ -195,7 +195,7 @@ public class DatabaseMetaDataPropertiesTest {
     DatabaseMetaData dbmd = con.getMetaData();
     assertNotNull(dbmd);
 
-    assertEquals("POLARDB2 Database Compatible with Oracle", dbmd.getDatabaseProductName());
+    assertEquals("PostgreSQL", dbmd.getDatabaseProductName());
     assertTrue(dbmd.getDatabaseMajorVersion() >= 8);
     assertTrue(dbmd.getDatabaseMinorVersion() >= 0);
     assertTrue(dbmd.getDatabaseProductVersion().startsWith(String.valueOf(dbmd.getDatabaseMajorVersion())));
@@ -206,7 +206,7 @@ public class DatabaseMetaDataPropertiesTest {
     DatabaseMetaData dbmd = con.getMetaData();
     assertNotNull(dbmd);
 
-    assertEquals("PolarDB2 JDBC Driver", dbmd.getDriverName());
+    assertEquals("PolarDB-2.0 JDBC Driver", dbmd.getDriverName());
     assertEquals(com.aliyun.polardb2.util.DriverInfo.DRIVER_VERSION, dbmd.getDriverVersion());
     assertEquals(new com.aliyun.polardb2.Driver().getMajorVersion(), dbmd.getDriverMajorVersion());
     assertEquals(new com.aliyun.polardb2.Driver().getMinorVersion(), dbmd.getDriverMinorVersion());
