@@ -624,11 +624,6 @@ public class Driver implements java.sql.Driver {
         return null;
       }
 
-      if (driverPrefix == PolarDriverPrefix.ORACLE && urlServer.startsWith(":thin")) {
-        LOGGER.log(Level.WARNING, "PolarDB do support url start with \"jdbc:oracle:thin\"");
-        return null;
-      }
-
       priority1Url.setProperty(PGProperty.PG_DBNAME.getName(), value);
     }
 

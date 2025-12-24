@@ -24,22 +24,26 @@ public class DriverPrefix {
 
   @Test
   public void testGetURL2() throws Exception {
-    conn = DriverManager.getConnection(String.format("jdbc:oracle://%s:%s/%s?" + "user=%s"
-        + "&password=%s", TestUtil.getServer(), TestUtil.getPort(), TestUtil.getDatabase(),
-        TestUtil.getUser(), TestUtil.getPassword()));
-
-    Assert.assertNotNull(conn);
-    Assert.assertTrue(((PgConnection) conn).getURL().startsWith("jdbc:oracle://"));
+    try {
+      conn = DriverManager.getConnection(String.format("jdbc:oracle://%s:%s/%s?" + "user=%s"
+          + "&password=%s", TestUtil.getServer(), TestUtil.getPort(), TestUtil.getDatabase(),
+          TestUtil.getUser(), TestUtil.getPassword()));
+    } catch (Exception exp) {
+      System.out.println(exp.getMessage().toString());
+      Assert.assertTrue(exp.getMessage().startsWith("No suitable driver found for jdbc:oracle://"));
+    }
   }
 
   @Test
   public void testGetURL3() throws Exception {
-    conn = DriverManager.getConnection(String.format("jdbc:oracle:thin://%s:%s/%s?" + "user=%s"
-        + "&password=%s", TestUtil.getServer(), TestUtil.getPort(), TestUtil.getDatabase(),
-        TestUtil.getUser(), TestUtil.getPassword()));
-
-    Assert.assertNotNull(conn);
-    Assert.assertTrue(((PgConnection) conn).getURL().startsWith("jdbc:oracle:thin://"));
+    try {
+      conn = DriverManager.getConnection(String.format("jdbc:oracle:thin://%s:%s/%s?" + "user=%s"
+          + "&password=%s", TestUtil.getServer(), TestUtil.getPort(), TestUtil.getDatabase(),
+          TestUtil.getUser(), TestUtil.getPassword()));
+    } catch (Exception exp) {
+      System.out.println(exp.getMessage().toString());
+      Assert.assertTrue(exp.getMessage().startsWith("No suitable driver found for jdbc:oracle:thin://"));
+    }
   }
 
   @Test

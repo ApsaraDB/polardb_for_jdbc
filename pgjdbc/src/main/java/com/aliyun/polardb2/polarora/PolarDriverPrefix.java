@@ -8,9 +8,7 @@ import java.util.Locale;
 public enum PolarDriverPrefix {
   POSTGRES("postgresql", "jdbc:postgresql:", "POSTGRES Database"),
   POLARDB("polardb", "jdbc:polardb:", "POLARDB Database Compatible with Oracle 2.0"),
-  POLARDB2("polardb2", "jdbc:polardb2:", "POLARDB Database Compatible with Oracle 2.0"),
-  ORACLE_THIN("oracle", "jdbc:oracle:thin:", "Oracle"),
-  ORACLE("oracle", "jdbc:oracle:", "Oracle");
+  POLARDB2("polardb2", "jdbc:polardb2:", "POLARDB Database Compatible with Oracle 2.0");
 
   private String mode;
   private String prefix;
@@ -53,11 +51,6 @@ public enum PolarDriverPrefix {
         ret = mode;
         break;
       }
-    }
-
-    /* url prefix is polardb or postgresql, pass it */
-    if (ret != ORACLE && ret != ORACLE_THIN) {
-      return ret;
     }
 
     switch (compOraclePrefix()) {
