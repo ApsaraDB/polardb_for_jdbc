@@ -39,6 +39,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.StringTokenizer;
 
@@ -1318,7 +1319,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
              + " WHERE c.relnamespace = n.oid ";
 
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
-      select += " AND n.nspname LIKE " + escapeQuotes(schemaPattern);
+      select += " AND n.nspname LIKE " + escapeQuotes(schemaPattern.toLowerCase(Locale.US));
     }
     if (connection.getHideUnprivilegedObjects()) {
       select += " AND has_table_privilege(c.oid, "
@@ -1327,7 +1328,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     orderby = " ORDER BY TABLE_TYPE,TABLE_SCHEM,TABLE_NAME ";
 
     if (tableNamePattern != null && !tableNamePattern.isEmpty()) {
-      select += " AND c.relname LIKE " + escapeQuotes(tableNamePattern);
+      select += " AND c.relname LIKE " + escapeQuotes(tableNamePattern.toLowerCase(Locale.US));
     }
     if (types != null) {
       select += " AND (false ";
