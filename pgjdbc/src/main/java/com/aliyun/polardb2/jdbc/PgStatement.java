@@ -279,8 +279,12 @@ public class PgStatement implements Statement, BaseStatement {
       ResultWrapper iter = result;
       while (iter != null) {
         if (iter.getResultSet() != null) {
-          throw new PSQLException(GT.tr("A result was returned when none was expected."),
-              PSQLState.TOO_MANY_RESULTS);
+          // Check if allowSelectInExecuteUpdate is enabled
+          if (!connection.isAllowSelectInExecuteUpdate()) {
+            throw new PSQLException(GT.tr("A result was returned when none was expected."),
+                PSQLState.TOO_MANY_RESULTS);
+          }
+          // If enabled, don't throw exception, just continue
         }
         iter = iter.getNext();
       }

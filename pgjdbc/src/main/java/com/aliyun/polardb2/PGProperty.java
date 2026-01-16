@@ -67,6 +67,16 @@ public enum PGProperty {
       "Allow for changes in client_encoding"),
 
   /**
+   * Allow executeUpdate to execute SELECT queries without throwing an error.
+   * When enabled, executeUpdate can execute SELECT statements and will return 0 as update count.
+   * Default is false to maintain JDBC specification compliance.
+   */
+  ALLOW_SELECT_IN_EXECUTE_UPDATE(
+      "allowSelectInExecuteUpdate",
+      "false",
+      "Allow executeUpdate to execute SELECT queries without throwing an error"),
+
+  /**
    * The application name (require server version &gt;= 9.0).
    */
   APPLICATION_NAME(

@@ -209,6 +209,7 @@ public class PgConnection implements BaseConnection {
   private boolean commentStyle = false;
   private boolean callFunctionMode = false;
   private boolean forceDriverType = false;
+  private boolean allowSelectInExecuteUpdate = false;
   /* POLAR DIFF END */
 
   // Current warnings; there might be more on queryExecutor too.
@@ -529,6 +530,7 @@ public class PgConnection implements BaseConnection {
     this.boolAsInt = PGProperty.BOOL_AS_INT.getBoolean(info);
     this.callFunctionMode = PGProperty.CALL_FUNCTION_MODE.getBoolean(info);
     this.forceDriverType = PGProperty.FORCE_DRIVER_TYPE.getBoolean(info);
+    this.allowSelectInExecuteUpdate = PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.getBoolean(info);
   }
 
   @Deprecated
@@ -2070,5 +2072,9 @@ public class PgConnection implements BaseConnection {
   @Override
   public boolean isForceDriverType() {
     return forceDriverType;
+  }
+
+  public boolean isAllowSelectInExecuteUpdate() {
+    return allowSelectInExecuteUpdate;
   }
 }

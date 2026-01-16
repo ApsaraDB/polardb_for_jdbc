@@ -690,6 +690,43 @@ public class StatementTest {
   }
 
   @Test
+  public void testExecuteUpdateWithSelectWhenEnabled() throws SQLException {
+    // Test with allowSelectInExecuteUpdate enabled
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, true);
+    Connection testConn = TestUtil.openDB(props);
+    try {
+      Statement stmt = testConn.createStatement();
+      // Should not throw exception when parameter is enabled
+      int updateCount = stmt.executeUpdate("SELECT 1");
+      // executeUpdate should return 0 for SELECT queries
+      assertEquals("executeUpdate should return 0 for SELECT when allowSelectInExecuteUpdate is enabled", 0, updateCount);
+      stmt.close();
+    } finally {
+      testConn.close();
+    }
+  }
+
+  @Test
+  public void testExecuteUpdateWithSelectWhenDisabled() throws SQLException {
+    // Test with allowSelectInExecuteUpdate disabled (default)
+    Connection testConn = TestUtil.openDB();
+    try {
+      Statement stmt = testConn.createStatement();
+      try {
+        stmt.executeUpdate("SELECT 1");
+        fail("Should have thrown an error when allowSelectInExecuteUpdate is disabled");
+      } catch (SQLException sqle) {
+        // Expected exception
+        assertEquals("Too many results were returned.", sqle.getMessage());
+      }
+      stmt.close();
+    } finally {
+      testConn.close();
+    }
+  }
+
+  @Test
   public void testExecuteUpdateFailsOnMultiStatementSelect() throws SQLException {
     Statement stmt = con.createStatement();
     try {

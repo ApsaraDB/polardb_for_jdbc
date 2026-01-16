@@ -1201,6 +1201,22 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
   }
 
   /**
+   * @return if executeUpdate allows executing SELECT queries
+   * @see PGProperty#ALLOW_SELECT_IN_EXECUTE_UPDATE
+   */
+  public boolean getAllowSelectInExecuteUpdate() {
+    return PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.getBoolean(properties);
+  }
+
+  /**
+   * @param allow if executeUpdate allows executing SELECT queries
+   * @see PGProperty#ALLOW_SELECT_IN_EXECUTE_UPDATE
+   */
+  public void setAllowSelectInExecuteUpdate(boolean allow) {
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(properties, allow);
+  }
+
+  /**
    * @return socket factory class name
    * @see PGProperty#SOCKET_FACTORY
    */
