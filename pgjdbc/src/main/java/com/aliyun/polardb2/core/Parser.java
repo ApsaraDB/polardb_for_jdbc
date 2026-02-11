@@ -1322,7 +1322,7 @@ public class Parser {
     // RE: frequently used statements are cached (see {@link com.aliyun.polardb2.jdbc.PgConnection#borrowQuery}), so this "merge" is not that important.
     boolean isFunction = false;
     boolean outParamBeforeFunc = false;
-    Pattern pattern = Pattern.compile("^begin(.*)end(;?)$", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+    Pattern pattern = Pattern.compile("^\\s*begin(.*)end\\s*(;?)\\s*$", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     Matcher matcher = pattern.matcher(jdbcSql);
 
     if (matcher.matches()) {
