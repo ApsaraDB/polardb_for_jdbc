@@ -718,7 +718,9 @@ public class StatementTest {
         fail("Should have thrown an error when allowSelectInExecuteUpdate is disabled");
       } catch (SQLException sqle) {
         // Expected exception
-        assertEquals("Too many results were returned.", sqle.getMessage());
+        // The error message might be "A result was returned when none was expected."
+        // or its translation depending on the locale
+        assertEquals(PSQLState.TOO_MANY_RESULTS.getState(), sqle.getSQLState());
       }
       stmt.close();
     } finally {

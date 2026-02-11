@@ -539,6 +539,11 @@ public class PgStatement implements Statement, BaseStatement {
     try (ResourceLock ignore = lock.obtain()) {
       checkClosed();
       if (result == null || result.getResultSet() != null) {
+        // If allowSelectInExecuteUpdate is enabled and we have a ResultSet,
+        // return 0 instead of -1 for SELECT queries in executeUpdate
+        if (result != null && result.getResultSet() != null && connection.isAllowSelectInExecuteUpdate()) {
+          return 0;
+        }
         return -1;
       }
 
