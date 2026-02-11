@@ -3711,7 +3711,7 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
                 PSQLState.INVALID_PARAMETER_VALUE);
       }
     } else if (type == Short.class) {
-      if (sqlType == Types.SMALLINT) {
+      if (sqlType == Types.SMALLINT || sqlType == Types.NUMERIC) {
         short shortValue = getShort(columnIndex);
         if (wasNull()) {
           return null;
@@ -3722,7 +3722,7 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
                 PSQLState.INVALID_PARAMETER_VALUE);
       }
     } else if (type == Integer.class) {
-      if (sqlType == Types.INTEGER || sqlType == Types.SMALLINT) {
+      if (sqlType == Types.INTEGER || sqlType == Types.SMALLINT || sqlType == Types.NUMERIC) {
         int intValue = getInt(columnIndex);
         if (wasNull()) {
           return null;
@@ -3733,7 +3733,7 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
                 PSQLState.INVALID_PARAMETER_VALUE);
       }
     } else if (type == Long.class) {
-      if (sqlType == Types.BIGINT) {
+      if (sqlType == Types.BIGINT || sqlType == Types.NUMERIC) {
         long longValue = getLong(columnIndex);
         if (wasNull()) {
           return null;
