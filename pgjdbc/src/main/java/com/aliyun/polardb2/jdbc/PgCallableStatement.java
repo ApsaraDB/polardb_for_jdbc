@@ -173,6 +173,30 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
             if (callResult[j] != null) {
               callResult[j] = BigDecimal.valueOf((Double) callResult[j]);
             }
+          } else if (columnType == Types.BIGINT && functionReturnType[j] == Types.NUMERIC) {
+            // POLAR: support OUT bigint compatible with NUMERIC
+            if (callResult[j] != null) {
+              // Handle both Long and BigDecimal (if bigintAsNumeric is enabled)
+              if (callResult[j] instanceof Long) {
+                callResult[j] = BigDecimal.valueOf((Long) callResult[j]);
+              }
+              // If already BigDecimal, no conversion needed
+            }
+          } else if (columnType == Types.NUMERIC && functionReturnType[j] == Types.BIGINT) {
+            // POLAR: support OUT numeric compatible with BIGINT
+            if (callResult[j] != null) {
+              callResult[j] = ((BigDecimal) callResult[j]).longValue();
+            }
+          } else if (columnType == Types.SMALLINT && functionReturnType[j] == Types.NUMERIC) {
+            // POLAR: support OUT smallint compatible with NUMERIC
+            if (callResult[j] != null) {
+              callResult[j] = BigDecimal.valueOf((Integer) callResult[j]);
+            }
+          } else if (columnType == Types.NUMERIC && functionReturnType[j] == Types.SMALLINT) {
+            // POLAR: support OUT numeric compatible with SMALLINT
+            if (callResult[j] != null) {
+              callResult[j] = ((BigDecimal) callResult[j]).intValue();
+            }
           } else if (columnType == Types.CHAR && functionReturnType[j] == Types.VARCHAR) {
               /* you don't need to perform explicit type conversions, as JDBC handles these type conversions automatically. */
           } else if (columnType == Types.VARCHAR && functionReturnType[j] == Types.CHAR) {
@@ -285,8 +309,31 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public @Nullable String getString(@Positive int parameterIndex) throws SQLException {
-    Object result = checkIndex(parameterIndex, Types.VARCHAR, "String");
-    return (String) result;
+    Object result = getCallResult(parameterIndex);
+    if (result == null) {
+      return null;
+    }
+
+    // getString() should be able to convert from most types to String
+    // This is more flexible than strict type checking
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+
+    // For numeric types, convert to string
+    if (testReturn == Types.INTEGER || testReturn == Types.SMALLINT
+        || testReturn == Types.BIGINT || testReturn == Types.NUMERIC
+        || testReturn == Types.DECIMAL || testReturn == Types.DOUBLE
+        || testReturn == Types.REAL || testReturn == Types.FLOAT) {
+      return result.toString();
+    }
+
+    // For VARCHAR, CHAR and other string types, direct cast
+    if (testReturn == Types.VARCHAR || testReturn == Types.CHAR
+        || testReturn == Types.LONGVARCHAR) {
+      return (String) result;
+    }
+
+    // For other types, try to convert to string
+    return result.toString();
   }
 
   public boolean getBoolean(@Positive int parameterIndex) throws SQLException {
@@ -298,6 +345,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public byte getByte(@Positive int parameterIndex) throws SQLException {
+    /* POLAR: allow getByte from number */
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+
+    if (testReturn == Types.NUMERIC) {
+      Object result = callResult != null ? callResult[parameterIndex - 1] : null;
+      if (result == null) {
+        return 0;
+      }
+      return ((BigDecimal) result).byteValue();
+    }
+
     // fake tiny int with smallint
     Object result = checkIndex(parameterIndex, Types.SMALLINT, "Byte");
 
@@ -310,6 +368,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public short getShort(@Positive int parameterIndex) throws SQLException {
+    /* POLAR: allow getShort from number */
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+
+    if (testReturn == Types.NUMERIC) {
+      Object result = callResult != null ? callResult[parameterIndex - 1] : null;
+      if (result == null) {
+        return 0;
+      }
+      return ((BigDecimal) result).shortValue();
+    }
+
     Object result = checkIndex(parameterIndex, Types.SMALLINT, "Short");
     if (result == null) {
       return 0;
@@ -335,6 +404,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public long getLong(@Positive int parameterIndex) throws SQLException {
+    /* POLAR: allow getLong from number */
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+
+    if (testReturn == Types.NUMERIC) {
+      Object result = callResult != null ? callResult[parameterIndex - 1] : null;
+      if (result == null) {
+        return 0;
+      }
+      return ((BigDecimal) result).longValue();
+    }
+
     Object result = checkIndex(parameterIndex, Types.BIGINT, "Long");
     if (result == null) {
       return 0;
@@ -344,6 +424,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public float getFloat(@Positive int parameterIndex) throws SQLException {
+    /* POLAR: allow getFloat from number */
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+
+    if (testReturn == Types.NUMERIC) {
+      Object result = callResult != null ? callResult[parameterIndex - 1] : null;
+      if (result == null) {
+        return 0;
+      }
+      return ((BigDecimal) result).floatValue();
+    }
+
     Object result = checkIndex(parameterIndex, Types.REAL, "Float");
     if (result == null) {
       return 0;
@@ -353,6 +444,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public double getDouble(@Positive int parameterIndex) throws SQLException {
+    /* POLAR: allow getDouble from number */
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+
+    if (testReturn == Types.NUMERIC) {
+      Object result = callResult != null ? callResult[parameterIndex - 1] : null;
+      if (result == null) {
+        return 0;
+      }
+      return ((BigDecimal) result).doubleValue();
+    }
+
     Object result = checkIndex(parameterIndex, Types.DOUBLE, "Double");
     if (result == null) {
       return 0;

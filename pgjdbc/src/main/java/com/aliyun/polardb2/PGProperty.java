@@ -181,6 +181,18 @@ public enum PGProperty {
     new String[] {"true", "false"}),
 
   /**
+   * POLAR: BIGINT as NUMERIC
+   * When enabled, getObject() on BIGINT columns will return BigDecimal instead of Long.
+   * This allows direct casting to BigDecimal for operations like COUNT(*).
+   */
+  BIGINT_AS_NUMERIC(
+    "bigintAsNumeric",
+    "true",
+    "Treat BIGINT as NUMERIC (BigDecimal) instead of Long.",
+    false,
+    new String[] {"true", "false"}),
+
+  /**
    * POLAR: CallFunction
    */
   CALL_FUNCTION_MODE(

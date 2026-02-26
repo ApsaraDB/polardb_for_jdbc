@@ -1135,5 +1135,13 @@ public abstract class AbstractArraysTest<A> {
     public boolean isForceDriverType() {
       return false;
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean isBigintAsNumeric() {
+      return false;
+    }
   }
 }

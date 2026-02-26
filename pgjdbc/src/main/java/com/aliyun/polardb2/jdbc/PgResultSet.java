@@ -220,6 +220,11 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
       case Types.INTEGER:
         return getInt(columnIndex);
       case Types.BIGINT:
+        // POLAR: If bigintAsNumeric is enabled, return BigDecimal instead of Long
+        if (connection.isBigintAsNumeric()) {
+          return getNumeric(columnIndex,
+              (field.getMod() == -1) ? -1 : ((field.getMod() - 4) & 0xffff), true);
+        }
         return getLong(columnIndex);
       case Types.NUMERIC:
       case Types.DECIMAL:

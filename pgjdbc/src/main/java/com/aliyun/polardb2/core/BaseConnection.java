@@ -333,6 +333,13 @@ public interface BaseConnection extends PGConnection, Connection {
   boolean isBoolAsInt();
 
   /**
+   * Returns isBigintAsNumeric connection setting.
+   *
+   * @return isBigintAsNumeric setting
+   */
+  boolean isBigintAsNumeric();
+
+  /**
    * Returns isBoolAsInt connection setting.
    *
    * @return isBoolAsInt setting
