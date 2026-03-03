@@ -62,9 +62,12 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     }
 
     if (this.isFunction) {
-      int inParamCount = this.preparedParameters.getInParameterCount() + 1;
-      this.testReturn = new int[inParamCount];
-      this.functionReturnType = new int[inParamCount];
+      // POLAR: Use parameter count + 1 to ensure array is large enough for all parameter indices.
+      // This is needed for cases where user registers a parameter with high index as OUT
+      // even if it's actually an IN parameter in the function definition.
+      int arraySize = this.preparedParameters.getParameterCount() + 1;
+      this.testReturn = new int[arraySize];
+      this.functionReturnType = new int[arraySize];
 
       // POLAR: main entry for call function
       // if server enable, pass function call as Oracle format
@@ -118,7 +121,11 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
       int outParameterCount = preparedParameters.getOutParameterCount();
 
-      if (cols != outParameterCount) {
+      // POLAR: Allow execution when cols <= outParameterCount.
+      // This handles cases where an IN parameter is incorrectly registered as OUT parameter.
+      // The database only returns actual OUT parameters in the result set,
+      // but user may register more parameters as OUT than actual OUT parameters.
+      if (cols > outParameterCount) {
         throw new PSQLException(
             GT.tr("A CallableStatement was executed with an invalid number of parameters"),
             PSQLState.SYNTAX_ERROR);
