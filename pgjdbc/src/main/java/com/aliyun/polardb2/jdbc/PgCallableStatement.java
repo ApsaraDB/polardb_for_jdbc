@@ -124,8 +124,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
          * Some stored procedures may have out parameters but not assign values to them,
          * in which case no result set is returned. We initialize callResult with nulls. */
         lastIndex = 0;
-        @Nullable Object[] emptyResult = new Object[preparedParameters.getParameterCount() + 1];
-        this.callResult = emptyResult;
+        this.callResult = new Object[preparedParameters.getParameterCount() + 1];
         return false;
       }
 
@@ -136,8 +135,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
         rs.close();
         result = null;
         lastIndex = 0;
-        @Nullable Object[] emptyResult = new Object[preparedParameters.getParameterCount() + 1];
-        this.callResult = emptyResult;
+        this.callResult = new Object[preparedParameters.getParameterCount() + 1];
         return false;
       }
 
@@ -177,63 +175,11 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
         int columnType = rs.getMetaData().getColumnType(i + 1);
 
         if (columnType != functionReturnType[j]) {
-          // this is here for the sole purpose of passing the cts
-          if (columnType == Types.DOUBLE && functionReturnType[j] == Types.REAL) {
-            // return it as a float
-            Object result = callResult[j];
-            if (result != null) {
-              callResult[j] = ((Double) result).floatValue();
-            }
-          } else if (columnType == Types.REF_CURSOR && functionReturnType[j] == Types.OTHER) {
-            // For backwards compatibility reasons we support that ref cursors can be
-            // registered with both Types.OTHER and Types.REF_CURSOR so we allow
-            // this specific mismatch
-          } else if (columnType == Types.NUMERIC && functionReturnType[j] == Types.INTEGER) {
-            // POLAR: support OUT number compatiable with INTEGER
-            if (callResult[j] != null) {
-              callResult[j] = ((BigDecimal) callResult[j]).intValue();
-            }
-          } else if (columnType == Types.INTEGER && functionReturnType[j] == Types.NUMERIC) {
-            if (callResult[j] != null) {
-              callResult[j] = BigDecimal.valueOf((Integer) callResult[j]);
-            }
-          } else if (columnType == Types.NUMERIC && functionReturnType[j] == Types.DOUBLE) {
-            if (callResult[j] != null) {
-              callResult[j] = ((BigDecimal) callResult[j]).doubleValue();
-            }
-          } else if (columnType == Types.DOUBLE && functionReturnType[j] == Types.NUMERIC) {
-            if (callResult[j] != null) {
-              callResult[j] = BigDecimal.valueOf((Double) callResult[j]);
-            }
-          } else if (columnType == Types.BIGINT && functionReturnType[j] == Types.NUMERIC) {
-            // POLAR: support OUT bigint compatible with NUMERIC
-            if (callResult[j] != null) {
-              // Handle both Long and BigDecimal (if bigintAsNumeric is enabled)
-              if (callResult[j] instanceof Long) {
-                callResult[j] = BigDecimal.valueOf((Long) callResult[j]);
-              }
-              // If already BigDecimal, no conversion needed
-            }
-          } else if (columnType == Types.NUMERIC && functionReturnType[j] == Types.BIGINT) {
-            // POLAR: support OUT numeric compatible with BIGINT
-            if (callResult[j] != null) {
-              callResult[j] = ((BigDecimal) callResult[j]).longValue();
-            }
-          } else if (columnType == Types.SMALLINT && functionReturnType[j] == Types.NUMERIC) {
-            // POLAR: support OUT smallint compatible with NUMERIC
-            if (callResult[j] != null) {
-              callResult[j] = BigDecimal.valueOf((Integer) callResult[j]);
-            }
-          } else if (columnType == Types.NUMERIC && functionReturnType[j] == Types.SMALLINT) {
-            // POLAR: support OUT numeric compatible with SMALLINT
-            if (callResult[j] != null) {
-              callResult[j] = ((BigDecimal) callResult[j]).intValue();
-            }
-          } else if (columnType == Types.CHAR && functionReturnType[j] == Types.VARCHAR) {
-              /* you don't need to perform explicit type conversions, as JDBC handles these type conversions automatically. */
-          } else if (columnType == Types.VARCHAR && functionReturnType[j] == Types.CHAR) {
-            /* you don't need to perform explicit type conversions, as JDBC handles these type conversions automatically. */
-          } else {
+          // POLAR: convert out parameter value between compatible types.
+          try {
+            callResult[j] = convertOutParamValue(callResult[j], columnType, functionReturnType[j]);
+          } catch (PSQLException e) {
+            // re-throw with column index info
             throw new PSQLException(GT.tr(
                 "A CallableStatement function was executed and the out parameter {0} was of type {1} however type {2} was registered.",
                 i + 1, "java.sql.Types=" + columnType, "java.sql.Types=" + functionReturnType[j]),
@@ -246,6 +192,168 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       result = null;
     }
     return false;
+  }
+
+  /**
+   * POLAR: Converts an out parameter value from the database column type to the registered type.
+   *
+   * <p>Supports conversions between compatible type families:
+   * <ul>
+   *   <li>Integer family: SMALLINT, INTEGER, BIGINT</li>
+   *   <li>Floating-point family: REAL, FLOAT, DOUBLE</li>
+   *   <li>Numeric family: NUMERIC, DECIMAL</li>
+   *   <li>String family: CHAR, VARCHAR, LONGVARCHAR, NCHAR, NVARCHAR, LONGNVARCHAR</li>
+   *   <li>Date/time family: DATE, TIME, TIMESTAMP, TIMESTAMP_WITH_TIMEZONE</li>
+   *   <li>Any type to/from string family (toString / parse)</li>
+   * </ul>
+   *
+   * @param value        the raw value from the result set (may be null)
+   * @param columnType   the actual SQL type returned by the database
+   * @param registeredType the SQL type registered via registerOutParameter
+   * @return the converted value, or null if value is null
+   * @throws PSQLException if no compatible conversion exists
+   */
+  private @Nullable Object convertOutParamValue(
+      @Nullable Object value, int columnType, int registeredType) throws PSQLException {
+    if (value == null) {
+      return null;
+    }
+
+    // REF_CURSOR / OTHER: backwards-compatible alias, keep value as-is
+    if (columnType == Types.REF_CURSOR && registeredType == Types.OTHER) {
+      return value;
+    }
+
+    // ---- string family on either side ----
+    if (isStringType(registeredType)) {
+      // Any DB type → registered as string: convert to string representation
+      return value.toString();
+    }
+    if (isStringType(columnType)) {
+      // DB returned string → parse to the registered type
+      return parseStringToType(value.toString(), registeredType);
+    }
+
+    // ---- numeric family conversions ----
+    // Normalize the value to BigDecimal first when the source is any numeric type,
+    // then project to the target type.
+    BigDecimal numericValue = toNumeric(value, columnType);
+    if (numericValue != null) {
+      Object result = fromNumeric(numericValue, registeredType);
+      if (result != null) {
+        return result;
+      }
+    }
+
+    // ---- date/time family: keep value as-is, getXXX methods handle the conversion ----
+    if (isDateTimeType(columnType) && isDateTimeType(registeredType)) {
+      return value;
+    }
+
+    // No compatible conversion found
+    throw new PSQLException("incompatible type", PSQLState.DATA_TYPE_MISMATCH);
+  }
+
+  /** Returns true if the SQL type belongs to the string/character family. */
+  private static boolean isStringType(int sqlType) {
+    return sqlType == Types.CHAR || sqlType == Types.VARCHAR || sqlType == Types.LONGVARCHAR
+        || sqlType == Types.NCHAR || sqlType == Types.NVARCHAR || sqlType == Types.LONGNVARCHAR;
+  }
+
+  /** Returns true if the SQL type belongs to the date/time family. */
+  private static boolean isDateTimeType(int sqlType) {
+    return sqlType == Types.DATE || sqlType == Types.TIME || sqlType == Types.TIMESTAMP
+        || sqlType == Types.TIMESTAMP_WITH_TIMEZONE || sqlType == Types.TIME_WITH_TIMEZONE;
+  }
+
+  /**
+   * Tries to represent a numeric DB value as BigDecimal.
+   * Returns null if the column type is not a numeric family type.
+   */
+  private static @Nullable BigDecimal toNumeric(@Nullable Object value, int columnType) {
+    if (value == null) {
+      return null;
+    }
+    switch (columnType) {
+      case Types.SMALLINT:
+      case Types.INTEGER:
+        return BigDecimal.valueOf(((Number) value).longValue());
+      case Types.BIGINT:
+        return (value instanceof BigDecimal)
+            ? (BigDecimal) value
+            : BigDecimal.valueOf((Long) value);
+      case Types.NUMERIC:
+      case Types.DECIMAL:
+        return (BigDecimal) value;
+      case Types.REAL:
+      case Types.FLOAT:
+        return BigDecimal.valueOf(((Float) value).doubleValue());
+      case Types.DOUBLE:
+        return BigDecimal.valueOf((Double) value);
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Projects a BigDecimal to the target registered SQL type.
+   * Returns null if the target type is not a numeric family type.
+   */
+  private static @Nullable Object fromNumeric(BigDecimal bd, int registeredType) {
+    switch (registeredType) {
+      case Types.SMALLINT:
+      case Types.INTEGER:
+        return bd.intValue();
+      case Types.BIGINT:
+        return bd.longValue();
+      case Types.NUMERIC:
+      case Types.DECIMAL:
+        return bd;
+      case Types.REAL:
+      case Types.FLOAT:
+        return bd.floatValue();
+      case Types.DOUBLE:
+        return bd.doubleValue();
+      case Types.BIT:
+      case Types.BOOLEAN:
+        return bd.intValue() != 0;
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Parses a string value into the target registered SQL type.
+   * Falls back to the original string if parsing is not applicable or fails.
+   */
+  private static @Nullable Object parseStringToType(String strVal, int registeredType) {
+    try {
+      switch (registeredType) {
+        case Types.SMALLINT:
+        case Types.INTEGER:
+          return Integer.parseInt(strVal);
+        case Types.BIGINT:
+          return Long.parseLong(strVal);
+        case Types.NUMERIC:
+        case Types.DECIMAL:
+          return new BigDecimal(strVal);
+        case Types.REAL:
+        case Types.FLOAT:
+          return Float.parseFloat(strVal);
+        case Types.DOUBLE:
+          return Double.parseDouble(strVal);
+        case Types.BIT:
+        case Types.BOOLEAN:
+          return Boolean.parseBoolean(strVal);
+        default:
+          // DATE, TIME, TIMESTAMP, and other types: keep as string,
+          // the actual getXXX() accessor will handle further conversion.
+          return strVal;
+      }
+    } catch (NumberFormatException e) {
+      // If parsing fails, return the original string value
+      return strVal;
+    }
   }
 
   /**
@@ -424,7 +532,12 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
 
     if (testReturn == Types.NUMERIC) {
-      return ((BigDecimal) callResult[parameterIndex - 1]).intValue();
+      Object result = callResult != null ? callResult[parameterIndex - 1] : null;
+      lastIndex = parameterIndex;
+      if (result == null) {
+        return 0;
+      }
+      return ((BigDecimal) result).intValue();
     }
 
     Object result = checkIndex(parameterIndex, Types.INTEGER, "Int");
@@ -450,6 +563,11 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     Object result = checkIndex(parameterIndex, Types.BIGINT, "Long");
     if (result == null) {
       return 0;
+    }
+
+    /* POLAR: handle BigDecimal returned for BIGINT */
+    if (result instanceof BigDecimal) {
+      return ((BigDecimal) result).longValue();
     }
 
     return (Long) result;
