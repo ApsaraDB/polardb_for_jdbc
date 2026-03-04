@@ -85,6 +85,20 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     return super.executeUpdate();
   }
 
+  @Override
+  public @Nullable ResultSet executeQuery() throws SQLException {
+    try (ResourceLock ignore = lock.obtain()) {
+      /* POLAR: For stored procedure/function calls (isFunction=true), allow execution
+       * even if no result set is returned (e.g., procedures with only out parameters
+       * that don't assign values). In this case, return null instead of throwing. */
+      if (isFunction) {
+        executeWithFlags(0);
+        return null;
+      }
+      return super.executeQuery();
+    }
+  }
+
   public @Nullable Object getObject(@Positive int i, @Nullable Map<String, Class<?>> map)
       throws SQLException {
     return getObjectImpl(i, map);
@@ -106,14 +120,25 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       // If we are executing and there are out parameters
       // callable statement function set the return data
       if (!hasResultSet) {
-        throw new PSQLException(GT.tr("A CallableStatement was executed with nothing returned."),
-            PSQLState.NO_DATA);
+        /* POLAR: Allow stored procedure with out parameters to return nothing.
+         * Some stored procedures may have out parameters but not assign values to them,
+         * in which case no result set is returned. We initialize callResult with nulls. */
+        lastIndex = 0;
+        @Nullable Object[] emptyResult = new Object[preparedParameters.getParameterCount() + 1];
+        this.callResult = emptyResult;
+        return false;
       }
 
       ResultSet rs = castNonNull(getResultSet());
       if (!rs.next()) {
-        throw new PSQLException(GT.tr("A CallableStatement was executed with nothing returned."),
-            PSQLState.NO_DATA);
+        /* POLAR: Allow stored procedure with out parameters to return empty result set.
+         * Initialize callResult with nulls so getXXX() calls return null/default values. */
+        rs.close();
+        result = null;
+        lastIndex = 0;
+        @Nullable Object[] emptyResult = new Object[preparedParameters.getParameterCount() + 1];
+        this.callResult = emptyResult;
+        return false;
       }
 
       // figure out how many columns
