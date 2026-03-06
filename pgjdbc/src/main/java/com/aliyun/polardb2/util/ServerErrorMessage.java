@@ -71,7 +71,11 @@ public class ServerErrorMessage implements Serializable {
 
   public @Nullable int getErrorCode() {
     try {
-      return Integer.parseInt(mesgParts.get(SQLCODE));
+      int sqlCode = Integer.parseInt(mesgParts.get(SQLCODE));
+      /* POLAR: Convert negative SQLCODE to positive to match Oracle convention.
+       * PostgreSQL uses negative codes (e.g., -1, -203), while Oracle uses positive (e.g., 1, 942).
+       * We take the absolute value to provide Oracle-compatible error codes. */
+      return Math.abs(sqlCode);
     } catch (NumberFormatException e) {
         // parse error
     }
