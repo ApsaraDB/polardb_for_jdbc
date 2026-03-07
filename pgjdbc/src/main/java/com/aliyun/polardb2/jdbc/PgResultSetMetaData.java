@@ -10,6 +10,7 @@ import static com.aliyun.polardb2.util.internal.Nullness.castNonNull;
 import com.aliyun.polardb2.PGResultSetMetaData;
 import com.aliyun.polardb2.core.BaseConnection;
 import com.aliyun.polardb2.core.Field;
+import com.aliyun.polardb2.core.Oid;
 import com.aliyun.polardb2.core.ServerVersion;
 import com.aliyun.polardb2.util.GT;
 import com.aliyun.polardb2.util.Gettable;
@@ -445,6 +446,13 @@ public class PgResultSetMetaData implements ResultSetMetaData, PGResultSetMetaDa
   public String getColumnClassName(int column) throws SQLException {
     Field field = getField(column);
     String result = connection.getTypeInfo().getJavaClass(field.getOID());
+
+    // POLAR: When bigintAsNumeric is enabled, BIGINT columns return BigDecimal
+    if (result != null && result.equals("java.lang.Long")
+        && connection.isBigintAsNumeric()
+        && field.getOID() != Oid.OID) {
+      return "java.math.BigDecimal";
+    }
 
     if (result != null) {
       return result;

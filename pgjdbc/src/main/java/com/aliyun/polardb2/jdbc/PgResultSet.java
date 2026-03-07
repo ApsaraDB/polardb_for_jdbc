@@ -221,7 +221,10 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
         return getInt(columnIndex);
       case Types.BIGINT:
         // POLAR: If bigintAsNumeric is enabled, return BigDecimal instead of Long
-        if (connection.isBigintAsNumeric()) {
+        // But OID type should always return Long regardless of bigintAsNumeric setting,
+        // because PostgreSQL has no "oid = numeric" operator and using BigDecimal for OID
+        // would break WHERE clause in updateRow() etc.
+        if (connection.isBigintAsNumeric() && field.getOID() != Oid.OID) {
           return getNumeric(columnIndex,
               (field.getMod() == -1) ? -1 : ((field.getMod() - 4) & 0xffff), true);
         }

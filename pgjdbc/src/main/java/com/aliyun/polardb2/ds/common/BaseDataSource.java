@@ -1992,6 +1992,14 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
     return PGProperty.FORCE_DRIVER_TYPE.getOrDefault(properties);
   }
 
+  public boolean getBigintAsNumeric() {
+    return PGProperty.BIGINT_AS_NUMERIC.getBoolean(properties);
+  }
+
+  public void setBigintAsNumeric(boolean bigintAsNumeric) {
+    PGProperty.BIGINT_AS_NUMERIC.set(properties, bigintAsNumeric);
+  }
+
   public boolean getBoolAsInt() {
     return PGProperty.BOOL_AS_INT.getBoolean(properties);
   }

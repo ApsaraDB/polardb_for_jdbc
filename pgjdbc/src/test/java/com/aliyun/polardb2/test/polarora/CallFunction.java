@@ -677,10 +677,10 @@ public class CallFunction {
     TestUtil.execute(conn, "CREATE OR REPLACE FUNCTION do_test_max(a int, b int) RETURN int AS BEGIN RETURN CASE WHEN a > b THEN a ELSE b END; END;");
     try {
       try (CallableStatement cs = conn.prepareCall(
-          "begin " +
-          "  ? := do_test_max(?, ?); " +
-          "  if ? > 50 then ? := 'big'; else ? := 'small'; end if; " +
-          "end;")) {
+          "begin "
+          + "  ? := do_test_max(?, ?); "
+          + "  if ? > 50 then ? := 'big'; else ? := 'small'; end if; "
+          + "end;")) {
         cs.setInt(2, 30);
         cs.setInt(3, 20);
         cs.setInt(4, 30);  // condition for if statement
@@ -723,43 +723,43 @@ public class CallFunction {
   public void testDoBlockComplexInOutParams() throws Exception {
     // Create function: calc_stats(IN base int, INOUT multiplier int, OUT result int, OUT msg varchar)
     TestUtil.execute(conn,
-        "CREATE OR REPLACE FUNCTION do_calc_stats(" +
-        "  base IN int," +
-        "  multiplier INOUT int," +
-        "  result OUT int," +
-        "  msg OUT varchar" +
-        ") RETURN varchar AS " +
-        "BEGIN " +
-        "  result := base * multiplier; " +
-        "  multiplier := multiplier + 1; " +
-        "  msg := 'Base=' || base || ', Mult=' || (multiplier-1) || ', Result=' || result; " +
-        "  RETURN msg; " +
-        "END;");
+        "CREATE OR REPLACE FUNCTION do_calc_stats("
+        + "  base IN int,"
+        + "  multiplier INOUT int,"
+        + "  result OUT int,"
+        + "  msg OUT varchar"
+        + ") RETURN varchar AS "
+        + "BEGIN "
+        + "  result := base * multiplier; "
+        + "  multiplier := multiplier + 1; "
+        + "  msg := 'Base=' || base || ', Mult=' || (multiplier-1) || ', Result=' || result; "
+        + "  RETURN msg; "
+        + "END;");
 
     // Create procedure: update_stats(IN base int, INOUT factor int, OUT total int, OUT status varchar)
     TestUtil.execute(conn,
-        "CREATE OR REPLACE PROCEDURE do_update_stats(" +
-        "  base IN int," +
-        "  factor INOUT int," +
-        "  total OUT int," +
-        "  status OUT varchar" +
-        ") AS " +
-        "BEGIN " +
-        "  total := base + factor; " +
-        "  factor := factor * 2; " +
-        "  IF total > 100 THEN " +
-        "    status := 'HIGH'; " +
-        "  ELSE " +
-        "    status := 'LOW'; " +
-        "  END IF; " +
-        "END;");
+        "CREATE OR REPLACE PROCEDURE do_update_stats("
+        + "  base IN int,"
+        + "  factor INOUT int,"
+        + "  total OUT int,"
+        + "  status OUT varchar"
+        + ") AS "
+        + "BEGIN "
+        + "  total := base + factor; "
+        + "  factor := factor * 2; "
+        + "  IF total > 100 THEN "
+        + "    status := 'HIGH'; "
+        + "  ELSE "
+        + "    status := 'LOW'; "
+        + "  END IF; "
+        + "END;");
 
     try {
       // Test 1: Call function with IN/OUT/INOUT params in DO block
       try (CallableStatement cs = conn.prepareCall(
-          "begin " +
-          "  ? := do_calc_stats(?, ?, ?, ?); " +  // return value + 3 OUT params
-          "end;")) {
+          "begin "
+          + "  ? := do_calc_stats(?, ?, ?, ?); "  // return value + 3 OUT params
+          + "end;")) {
         // IN param: base = 10 (param 2)
         cs.setInt(2, 10);
         // INOUT param: multiplier = 5 (param 3), will become 6 after call
@@ -784,9 +784,9 @@ public class CallFunction {
 
       // Test 2: Call procedure with IN/OUT/INOUT params in DO block
       try (CallableStatement cs = conn.prepareCall(
-          "begin " +
-          "  do_update_stats(?, ?, ?, ?); " +
-          "end;")) {
+          "begin "
+          + "  do_update_stats(?, ?, ?, ?); "
+          + "end;")) {
         // IN param: base = 30 (param 1)
         cs.setInt(1, 30);
         // INOUT param: factor = 40 (param 2), will become 80 after call
@@ -807,9 +807,9 @@ public class CallFunction {
 
       // Test 3: HIGH status case
       try (CallableStatement cs = conn.prepareCall(
-          "begin " +
-          "  do_update_stats(?, ?, ?, ?); " +
-          "end;")) {
+          "begin "
+          + "  do_update_stats(?, ?, ?, ?); "
+          + "end;")) {
         cs.setInt(1, 80);
         cs.setInt(2, 50);  // 80+50=130 > 100, should be HIGH
 
@@ -826,10 +826,10 @@ public class CallFunction {
 
       // Test 4: Multiple calls in single DO block
       try (CallableStatement cs = conn.prepareCall(
-          "begin " +
-          "  ? := do_calc_stats(?, ?, ?, ?); " +
-          "  do_update_stats(?, ?, ?, ?); " +
-          "end;")) {
+          "begin "
+          + "  ? := do_calc_stats(?, ?, ?, ?); "
+          + "  do_update_stats(?, ?, ?, ?); "
+          + "end;")) {
         // First call: do_calc_stats(3, 4)
         cs.setInt(2, 3);   // base
         cs.setInt(3, 4);   // multiplier

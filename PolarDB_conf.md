@@ -19,6 +19,7 @@ nls_timestamp_tz_format = 'YYYY-MM-DD HH24:MI:SS.FFTZO'
 polar_enable_refcursor_implicit_inout = off
 polar_enable_stmt_transaction_rollback = off
 polar_enable_ddl_implicit_commit= off
+polar_enable_comment_without_level_check = on
 
 ### SQL
 create user postgres password 'postgres' superuser;

@@ -27,16 +27,22 @@ public class BigintAsNumericTest {
 
   private Connection con;
   private Connection conWithBigintAsNumeric;
+  private Connection conWithBigintAsLong;
 
   @Before
   public void setUp() throws Exception {
-    // Normal connection
+    // Normal connection (default: bigintAsNumeric=true)
     con = TestUtil.openDB();
 
-    // Connection with bigintAsNumeric enabled
+    // Connection with bigintAsNumeric explicitly enabled
     Properties props = new Properties();
     PGProperty.BIGINT_AS_NUMERIC.set(props, true);
     conWithBigintAsNumeric = TestUtil.openDB(props);
+
+    // Connection with bigintAsNumeric disabled (returns Long)
+    Properties propsLong = new Properties();
+    PGProperty.BIGINT_AS_NUMERIC.set(propsLong, false);
+    conWithBigintAsLong = TestUtil.openDB(propsLong);
 
     // Create test table
     Statement stmt = con.createStatement();
@@ -56,22 +62,23 @@ public class BigintAsNumericTest {
     TestUtil.dropTable(con, "test_bigint_numeric");
     TestUtil.closeDB(con);
     TestUtil.closeDB(conWithBigintAsNumeric);
+    TestUtil.closeDB(conWithBigintAsLong);
   }
 
   /**
-   * Test normal behavior - bigint returns Long
+   * Test bigintAsNumeric disabled - bigint returns Long
    */
   @Test
-  public void testBigintAsLongDefault() throws SQLException {
-    Statement stmt = con.createStatement();
+  public void testBigintAsLongWhenDisabled() throws SQLException {
+    Statement stmt = conWithBigintAsLong.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT bigint_value FROM test_bigint_numeric WHERE id = 1");
 
     assertTrue(rs.next());
     Object result = rs.getObject(1);
 
-    // Default behavior: should return Long
+    // With bigintAsNumeric disabled: should return Long
     assertNotNull(result);
-    assertTrue("Default behavior should return Long", result instanceof Long);
+    assertTrue("With bigintAsNumeric disabled, should return Long", result instanceof Long);
     assertEquals(123456789L, ((Long) result).longValue());
 
     rs.close();

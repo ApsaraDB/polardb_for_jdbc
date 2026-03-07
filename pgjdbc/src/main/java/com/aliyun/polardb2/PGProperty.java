@@ -135,6 +135,18 @@ public enum PGProperty {
       new String[]{"true", "false"}),
 
   /**
+   * POLAR: BIGINT as NUMERIC
+   * When enabled, getObject() on BIGINT columns will return BigDecimal instead of Long.
+   * This allows direct casting to BigDecimal for operations like COUNT(*).
+   */
+  BIGINT_AS_NUMERIC(
+    "bigintAsNumeric",
+    "true",
+    "Treat BIGINT as NUMERIC (BigDecimal) instead of Long.",
+    false,
+    new String[] {"true", "false"}),
+
+  /**
    * Use binary format for sending and receiving data if possible.
    */
   BINARY_TRANSFER(
@@ -158,7 +170,6 @@ public enum PGProperty {
       "binaryTransferEnable",
       "",
       "Comma separated list of types to enable binary transfer. Either OID numbers or names"),
-
   /**
    * POLAR: Use the Blob API for bytea fields (if true) or for Postgres
    * Large Objects (if false). Default is false.
@@ -177,18 +188,6 @@ public enum PGProperty {
     "boolAsInt",
     "false",
     "Treat bool as int or not.",
-    false,
-    new String[] {"true", "false"}),
-
-  /**
-   * POLAR: BIGINT as NUMERIC
-   * When enabled, getObject() on BIGINT columns will return BigDecimal instead of Long.
-   * This allows direct casting to BigDecimal for operations like COUNT(*).
-   */
-  BIGINT_AS_NUMERIC(
-    "bigintAsNumeric",
-    "true",
-    "Treat BIGINT as NUMERIC (BigDecimal) instead of Long.",
     false,
     new String[] {"true", "false"}),
 

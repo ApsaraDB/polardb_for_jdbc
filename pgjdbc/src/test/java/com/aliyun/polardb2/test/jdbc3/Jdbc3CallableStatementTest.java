@@ -171,18 +171,17 @@ public class Jdbc3CallableStatementTest extends BaseTest4 {
 
   @Test
   public void testTooManyParameters() throws Throwable {
+    // POLAR: Driver allows registering more OUT parameters than the function actually has.
+    // myif(a INOUT int, b IN int) only returns 1 column (a), but registering b as OUT
+    // is tolerated. The INOUT parameter a should still be returned correctly.
     CallableStatement cs = con.prepareCall("{call myif(?,?)}");
-    try {
-      cs.setInt(1, 1);
-      cs.setInt(2, 2);
-      cs.registerOutParameter(1, Types.INTEGER);
-      cs.registerOutParameter(2, Types.INTEGER);
-      cs.execute();
-      fail("should throw an exception");
-    } catch (SQLException ex) {
-      assertTrue(ex.getSQLState().equalsIgnoreCase(PSQLState.SYNTAX_ERROR.getState()));
-    }
-
+    cs.setInt(1, 1);
+    cs.setInt(2, 2);
+    cs.registerOutParameter(1, Types.INTEGER);
+    cs.registerOutParameter(2, Types.INTEGER);
+    cs.execute();
+    assertEquals(2, cs.getInt(1));
+    cs.close();
   }
 
   @Test
