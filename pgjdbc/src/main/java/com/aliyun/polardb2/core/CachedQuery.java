@@ -20,6 +20,9 @@ public class CachedQuery implements CanEstimateSize {
   public final Query query;
   public final boolean isFunction;
   public final boolean outParamBeforeFunc;
+  /* POLAR: DO anonymous block with $N INOUT parameters */
+  public final boolean isDoBlock;
+  public final int doBlockParamCount;
 
   private int executeCount;
 
@@ -27,6 +30,11 @@ public class CachedQuery implements CanEstimateSize {
   public UnNamedProc unProc;
 
   public CachedQuery(Object key, Query query, boolean isFunction, boolean outParamBeforeFunc, UnNamedProc proc) {
+    this(key, query, isFunction, outParamBeforeFunc, proc, false, 0);
+  }
+
+  public CachedQuery(Object key, Query query, boolean isFunction, boolean outParamBeforeFunc,
+      UnNamedProc proc, boolean isDoBlock, int doBlockParamCount) {
     assert key instanceof String || key instanceof CanEstimateSize
         : "CachedQuery.key should either be String or implement CanEstimateSize."
         + " Actual class is " + key.getClass();
@@ -35,6 +43,8 @@ public class CachedQuery implements CanEstimateSize {
     this.isFunction = isFunction;
     this.outParamBeforeFunc = outParamBeforeFunc;
     this.unProc = proc;
+    this.isDoBlock = isDoBlock;
+    this.doBlockParamCount = doBlockParamCount;
   }
 
   public void increaseExecuteCount() {

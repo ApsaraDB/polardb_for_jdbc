@@ -212,4 +212,13 @@ public interface ParameterList {
 
   /* POLAR */
   void setCallFunctionMode(boolean funMode);
+
+  /**
+   * POLAR: Returns true if the parameter at the given 1-based index has had a value bound
+   * (including an explicit NULL binding). Returns false if the slot is completely unset.
+   *
+   * @param index 1-based parameter index
+   * @return true if a value (including NULL) has been bound to this parameter
+   */
+  boolean isParameterSet(@Positive int index);
 }

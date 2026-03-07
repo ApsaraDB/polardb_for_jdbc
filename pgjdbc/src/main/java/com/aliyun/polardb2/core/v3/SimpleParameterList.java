@@ -464,6 +464,11 @@ public class SimpleParameterList implements V3ParameterList {
     }
   }
 
+  /* POLAR */
+  public boolean isParameterSet(@Positive int index) {
+    return paramValues[index - 1] != null;
+  }
+
   boolean isNull(@Positive int index) {
     return (paramValues[index - 1] == NULL_OBJECT);
   }

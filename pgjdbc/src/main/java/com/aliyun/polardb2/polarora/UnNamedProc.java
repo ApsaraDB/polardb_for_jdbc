@@ -101,6 +101,17 @@ public class UnNamedProc {
     isUnamedProc =
         ((paramIndex != -1) && ((declareStartIndex == 0) || ((beginStartIndex == 0) && (endStartIndex != -1))));
 
+    /* POLAR: Oracle-compatible anonymous DO blocks (begin...end with ? parameters) must NOT
+     * be handled by UnNamedProc (which creates a temporary stored procedure).
+     * Instead they are handled directly as DO blocks by Parser.modifyJdbcCall.
+     * The only begin...end pattern that stays with UnNamedProc is "declare ... begin...end"
+     * (declareStartIndex == 0), which is a full PL/SQL block needing a procedure wrapper.
+     * Pure begin...end anonymous blocks with ? are Oracle DO blocks — skip them here. */
+    if (isUnamedProc && declareStartIndex != 0 && beginStartIndex == 0) {
+      isUnamedProc = false;
+      return;
+    }
+
     if (isUnamedProc) {
       Random rd = new Random();
       int randomSeq = rd.nextInt(1000000);

@@ -192,6 +192,16 @@ class CompositeParameterList implements V3ParameterList {
     // unsupported
   }
 
+  /* POLAR */
+  public boolean isParameterSet(@Positive int index) {
+    try {
+      int i = findSubParam(index);
+      return subparams[i].isParameterSet(index - offsets[i]);
+    } catch (SQLException e) {
+      return false;
+    }
+  }
+
   private final @Positive int total;
   private final SimpleParameterList[] subparams;
   private final int[] offsets;

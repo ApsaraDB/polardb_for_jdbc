@@ -59,6 +59,8 @@ class CachedQueryCreateAction implements LruCache.CreateAction<Object, CachedQue
     }
     boolean isFunction;
     boolean outParamBeforeFunc;
+    boolean isDoBlock = false;
+    int doBlockParamCount = 0;
     if (key instanceof CallableQueryKey) {
       JdbcCallParseInfo callInfo =
           Parser.modifyJdbcCall(parsedSql, queryExecutor.getStandardConformingStrings(),
@@ -66,6 +68,8 @@ class CachedQueryCreateAction implements LruCache.CreateAction<Object, CachedQue
       parsedSql = callInfo.getSql();
       isFunction = callInfo.isFunction();
       outParamBeforeFunc = callInfo.outParamBeforeFunc();
+      isDoBlock = callInfo.isDoBlock();
+      doBlockParamCount = callInfo.getDoBlockParamCount();
     } else {
       isFunction = false;
       outParamBeforeFunc = false;
@@ -88,6 +92,6 @@ class CachedQueryCreateAction implements LruCache.CreateAction<Object, CachedQue
         );
 
     Query query = queryExecutor.wrap(queries);
-    return new CachedQuery(key, query, isFunction, outParamBeforeFunc, proc);
+    return new CachedQuery(key, query, isFunction, outParamBeforeFunc, proc, isDoBlock, doBlockParamCount);
   }
 }

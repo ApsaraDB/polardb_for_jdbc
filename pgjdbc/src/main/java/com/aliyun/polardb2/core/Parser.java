@@ -1322,17 +1322,41 @@ public class Parser {
     // RE: frequently used statements are cached (see {@link com.aliyun.polardb2.jdbc.PgConnection#borrowQuery}), so this "merge" is not that important.
     boolean isFunction = false;
     boolean outParamBeforeFunc = false;
-    Pattern pattern = Pattern.compile("^\\s*begin(.*)end\\s*(;?)\\s*$", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
-    Matcher matcher = pattern.matcher(jdbcSql);
 
-    if (matcher.matches()) {
-      String inner = matcher.group(1).trim();
-      if (inner.contains(":=")) {
-        String transformed = inner.replaceAll(":=", "= call").replaceAll(";\\s*$", "");
-        jdbcSql = "{" + transformed + "}";
+    /* POLAR: All begin...end blocks are treated as DO anonymous blocks.
+     * The SQL is preserved as-is for server-side execution with $N parameter binding.
+     * This supports Oracle-style anonymous blocks where all ? parameters are INOUT.
+     *
+     * Pattern: begin ... end;
+     *   - $N-style: begin $1 = 1; $2 = 'xxx'; end;
+     *   - ?-style:   begin ? = 1; ? = 'xxx'; end;
+     *   - Complex:   begin if func(?,?) then ? := 'Y'; end if; end;
+     *
+     * For $N-style, we count the max $N index. For ?-style, paramCount=0 and
+     * actual count comes from preparedParameters after parseJdbcSql converts ? to $N.
+     */
+    Pattern beginEndPattern = Pattern.compile("^\\s*begin(.*)end\\s*;?\\s*$", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+    Matcher beginEndMatcher = beginEndPattern.matcher(jdbcSql);
+    if (beginEndMatcher.matches()) {
+      String inner = beginEndMatcher.group(1).trim();
+
+      // Check for $N-style parameters (already converted to $N)
+      Pattern dollarPattern = Pattern.compile("\\$(\\d+)");
+      Matcher dollarMatcher = dollarPattern.matcher(inner);
+      int maxParamIndex = 0;
+      while (dollarMatcher.find()) {
+        int idx = Integer.parseInt(dollarMatcher.group(1));
+        if (idx > maxParamIndex) {
+          maxParamIndex = idx;
+        }
+      }
+
+      if (maxParamIndex > 0) {
+        // $N-style DO block with explicit param count
+        return new JdbcCallParseInfo(jdbcSql, true, false, true, maxParamIndex);
       } else {
-        String transformed = inner.replaceAll(";\\s*$", "");
-        jdbcSql = "{call " + transformed + "}";
+        // ?-style DO block (or no params) - param count determined later
+        return new JdbcCallParseInfo(jdbcSql, true, false, true, 0);
       }
     }
 

@@ -40,6 +40,8 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   // Used by the callablestatement style methods
   private final boolean isFunction;
   private final boolean outParamBeforeFunc;
+  /* POLAR: DO anonymous block with $N INOUT parameters */
+  private final boolean isDoBlock;
   // functionReturnType contains the user supplied value to check
   // testReturn contains a modified version to make it easier to
   // check the getXXX methods..
@@ -55,6 +57,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     super(connection, connection.borrowCallableQuery(sql), rsType, rsConcurrency, rsHoldability);
     this.isFunction = preparedQuery.isFunction;
     this.outParamBeforeFunc = preparedQuery.outParamBeforeFunc;
+    this.isDoBlock = preparedQuery.isDoBlock;
 
     /* POLAR: get the unamed SQL */
     if (this.preparedQuery.unProc != null && this.preparedQuery.unProc.isUnamedProc()) {
@@ -65,7 +68,19 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       // POLAR: Use parameter count + 1 to ensure array is large enough for all parameter indices.
       // This is needed for cases where user registers a parameter with high index as OUT
       // even if it's actually an IN parameter in the function definition.
-      int arraySize = this.preparedParameters.getParameterCount() + 1;
+      //
+      // For DO blocks:
+      //   - $N-style: doBlockParamCount holds the max $N index (may exceed preparedParameters count)
+      //   - ?-style: doBlockParamCount is 0; use preparedParameters.getParameterCount() instead
+      int baseCount;
+      if (this.isDoBlock && preparedQuery.doBlockParamCount > 0) {
+        // $N-style DO block: explicit param count from SQL scanning
+        baseCount = preparedQuery.doBlockParamCount;
+      } else {
+        // Normal function/procedure call, or ?-style DO block (? converted to $N by parseJdbcSql)
+        baseCount = this.preparedParameters.getParameterCount();
+      }
+      int arraySize = baseCount + 1;
       this.testReturn = new int[arraySize];
       this.functionReturnType = new int[arraySize];
 
@@ -111,6 +126,20 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   @Override
   public boolean executeWithFlags(int flags) throws SQLException {
     try (ResourceLock ignore = lock.obtain()) {
+      /* POLAR: For DO anonymous blocks, all ? parameters are INOUT.
+       * Users may only call registerOutParameter (not setXxx) for some/all of them.
+       * Without an explicit setXxx call, paramValues[i] == null and the driver would
+       * throw "No value specified for parameter N" from checkAllParametersSet().
+       * Auto-fill unset parameters with SQL NULL so the block executes successfully. */
+      if (isDoBlock) {
+        int paramCount = preparedParameters.getParameterCount();
+        for (int i = 1; i <= paramCount; i++) {
+          if (!preparedParameters.isParameterSet(i)) {
+            preparedParameters.setNull(i, 0);
+          }
+        }
+      }
+
       boolean hasResultSet = super.executeWithFlags(flags);
       int[] functionReturnType = this.functionReturnType;
       if (!isFunction || !returnTypeSet || functionReturnType == null) {
@@ -124,7 +153,8 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
          * Some stored procedures may have out parameters but not assign values to them,
          * in which case no result set is returned. We initialize callResult with nulls. */
         lastIndex = 0;
-        this.callResult = new Object[preparedParameters.getParameterCount() + 1];
+        int resultSize = doBlockResultSize();
+        this.callResult = new Object[resultSize];
         return false;
       }
 
@@ -135,63 +165,102 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
         rs.close();
         result = null;
         lastIndex = 0;
-        this.callResult = new Object[preparedParameters.getParameterCount() + 1];
+        int resultSize = doBlockResultSize();
+        this.callResult = new Object[resultSize];
         return false;
       }
 
       // figure out how many columns
       int cols = rs.getMetaData().getColumnCount();
 
-      int outParameterCount = preparedParameters.getOutParameterCount();
+      /* POLAR: For DO anonymous blocks, the result set columns map directly to $1, $2, ...
+       * in order. Skip the outParameterCount check since DO blocks do not use
+       * preparedParameters.registerOutParameter. */
+      if (!isDoBlock) {
+        int outParameterCount = preparedParameters.getOutParameterCount();
 
-      // POLAR: Allow execution when cols <= outParameterCount.
-      // This handles cases where an IN parameter is incorrectly registered as OUT parameter.
-      // The database only returns actual OUT parameters in the result set,
-      // but user may register more parameters as OUT than actual OUT parameters.
-      if (cols > outParameterCount) {
-        throw new PSQLException(
-            GT.tr("A CallableStatement was executed with an invalid number of parameters"),
-            PSQLState.SYNTAX_ERROR);
+        // POLAR: Allow execution when cols <= outParameterCount.
+        // This handles cases where an IN parameter is incorrectly registered as OUT parameter.
+        // The database only returns actual OUT parameters in the result set,
+        // but user may register more parameters as OUT than actual OUT parameters.
+        if (cols > outParameterCount) {
+          throw new PSQLException(
+              GT.tr("A CallableStatement was executed with an invalid number of parameters"),
+              PSQLState.SYNTAX_ERROR);
+        }
       }
 
       // reset last result fetched (for wasNull)
       lastIndex = 0;
 
       // allocate enough space for all possible parameters without regard to in/out
-      @Nullable Object[] callResult = new Object[preparedParameters.getParameterCount() + 1];
+      int resultSize = doBlockResultSize();
+      @Nullable Object[] callResult = new Object[resultSize];
       this.callResult = callResult;
 
-      // move them into the result set
-      for (int i = 0, j = 0; i < cols; i++, j++) {
-        // find the next out parameter, the assumption is that the functionReturnType
-        // array will be initialized with 0 and only out parameters will have values
-        // other than 0. 0 is the value for java.sql.Types.NULL, which should not
-        // conflict
-        while (j < functionReturnType.length && functionReturnType[j] == 0) {
-          j++;
-        }
-
-        callResult[j] = rs.getObject(i + 1);
-        int columnType = rs.getMetaData().getColumnType(i + 1);
-
-        if (columnType != functionReturnType[j]) {
-          // POLAR: convert out parameter value between compatible types.
-          try {
-            callResult[j] = convertOutParamValue(callResult[j], columnType, functionReturnType[j]);
-          } catch (PSQLException e) {
-            // re-throw with column index info
-            throw new PSQLException(GT.tr(
-                "A CallableStatement function was executed and the out parameter {0} was of type {1} however type {2} was registered.",
-                i + 1, "java.sql.Types=" + columnType, "java.sql.Types=" + functionReturnType[j]),
-                PSQLState.DATA_TYPE_MISMATCH);
+      if (isDoBlock) {
+        /* POLAR: For DO anonymous blocks, result set columns correspond to $1, $2, ...
+         * in sequential order. Map each column directly to its parameter index. */
+        for (int i = 0; i < cols; i++) {
+          int paramIdx = i; // 0-based index into callResult
+          callResult[paramIdx] = rs.getObject(i + 1);
+          int columnType = rs.getMetaData().getColumnType(i + 1);
+          int registeredType = functionReturnType[paramIdx];
+          if (registeredType != 0 && columnType != registeredType) {
+            try {
+              callResult[paramIdx] = convertOutParamValue(callResult[paramIdx], columnType, registeredType);
+            } catch (PSQLException e) {
+              throw new PSQLException(GT.tr(
+                  "A CallableStatement function was executed and the out parameter {0} was of type {1} however type {2} was registered.",
+                  i + 1, "java.sql.Types=" + columnType, "java.sql.Types=" + registeredType),
+                  PSQLState.DATA_TYPE_MISMATCH);
+            }
           }
         }
+      } else {
+        // move them into the result set
+        for (int i = 0, j = 0; i < cols; i++, j++) {
+          // find the next out parameter, the assumption is that the functionReturnType
+          // array will be initialized with 0 and only out parameters will have values
+          // other than 0. 0 is the value for java.sql.Types.NULL, which should not
+          // conflict
+          while (j < functionReturnType.length && functionReturnType[j] == 0) {
+            j++;
+          }
 
+          callResult[j] = rs.getObject(i + 1);
+          int columnType = rs.getMetaData().getColumnType(i + 1);
+
+          if (columnType != functionReturnType[j]) {
+            // POLAR: convert out parameter value between compatible types.
+            try {
+              callResult[j] = convertOutParamValue(callResult[j], columnType, functionReturnType[j]);
+            } catch (PSQLException e) {
+              // re-throw with column index info
+              throw new PSQLException(GT.tr(
+                  "A CallableStatement function was executed and the out parameter {0} was of type {1} however type {2} was registered.",
+                  i + 1, "java.sql.Types=" + columnType, "java.sql.Types=" + functionReturnType[j]),
+                  PSQLState.DATA_TYPE_MISMATCH);
+            }
+          }
+        }
       }
       rs.close();
       result = null;
     }
     return false;
+  }
+
+  /**
+   * POLAR: Returns the size to allocate for callResult array.
+   * For $N-style DO blocks, uses the explicit doBlockParamCount.
+   * For ?-style DO blocks and regular calls, uses preparedParameters.getParameterCount().
+   */
+  private int doBlockResultSize() {
+    if (isDoBlock && preparedQuery.doBlockParamCount > 0) {
+      return preparedQuery.doBlockParamCount + 1;
+    }
+    return preparedParameters.getParameterCount() + 1;
   }
 
   /**
@@ -422,7 +491,12 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
     /* POLAR: get oid from sqlType */
     Integer oid = connection.getTypeInfo().getOidFromSqlType(new Integer(sqlType));
-    preparedParameters.registerOutParameter(parameterIndex, oid.intValue());
+    /* POLAR: For DO anonymous blocks, $N parameters are bound directly in the SQL;
+     * we do not call preparedParameters.registerOutParameter since there is no
+     * corresponding positional ? placeholder. We only record the expected return type. */
+    if (!isDoBlock) {
+      preparedParameters.registerOutParameter(parameterIndex, oid.intValue());
+    }
     // functionReturnType contains the user supplied value to check
     // testReturn contains a modified version to make it easier to
     // check the getXXX methods..

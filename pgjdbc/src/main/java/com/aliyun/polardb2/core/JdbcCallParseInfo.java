@@ -12,11 +12,26 @@ public class JdbcCallParseInfo {
   private final String sql;
   private final boolean isFunction;
   private final boolean outParamBeforeFunc;
+  /* POLAR: DO anonymous block with $N INOUT parameters */
+  private final boolean isDoBlock;
+  private final int doBlockParamCount;
 
   public JdbcCallParseInfo(String sql, boolean isFunction, boolean outParamBeforeFunc) {
     this.sql = sql;
     this.isFunction = isFunction;
     this.outParamBeforeFunc = outParamBeforeFunc;
+    this.isDoBlock = false;
+    this.doBlockParamCount = 0;
+  }
+
+  /* POLAR: constructor for DO anonymous block */
+  public JdbcCallParseInfo(String sql, boolean isFunction, boolean outParamBeforeFunc,
+      boolean isDoBlock, int doBlockParamCount) {
+    this.sql = sql;
+    this.isFunction = isFunction;
+    this.outParamBeforeFunc = outParamBeforeFunc;
+    this.isDoBlock = isDoBlock;
+    this.doBlockParamCount = doBlockParamCount;
   }
 
   /**
@@ -44,6 +59,24 @@ public class JdbcCallParseInfo {
    */
   public boolean outParamBeforeFunc() {
     return outParamBeforeFunc;
+  }
+
+  /**
+   * Returns if given SQL is a DO anonymous block with $N INOUT parameters.
+   *
+   * @return {@code true} if given SQL is a DO anonymous block
+   */
+  public boolean isDoBlock() {
+    return isDoBlock;
+  }
+
+  /**
+   * Returns the number of INOUT parameters in a DO anonymous block.
+   *
+   * @return parameter count for DO anonymous block, 0 if not a DO block
+   */
+  public int getDoBlockParamCount() {
+    return doBlockParamCount;
   }
 
 }
