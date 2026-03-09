@@ -958,4 +958,142 @@ public class CallFunction {
       TestUtil.execute(conn, "DROP TYPE IF EXISTS actor_name_array");
     }
   }
+
+  /**
+   * POLAR: Verify that a DO block of the form "begin ? := func(?,?,?,?); end;"
+   * can expose both the function return value (param 1) and an OUT parameter
+   * of the function (param 5) when registerOutParameter is called for both.
+   *
+   * <P>Function signature: test_return_multiple(a int, b int, c int, d out int) RETURN numeric
+   * Expected: param1 = a+b+c (return value), param5 = c*2 (OUT param d)
+   */
+  @Test
+  public void testDoBlockFunctionWithOutParam() throws Exception {
+    try {
+      TestUtil.execute(conn,
+          "CREATE OR REPLACE FUNCTION test_return_multiple("
+          + "  a int, b int, c int, d out int"
+          + ") RETURN numeric AS\n"
+          + "BEGIN\n"
+          + "  d := c * 2;\n"
+          + "  RETURN a + b + c;\n"
+          + "END;");
+
+      // begin ? := test_return_multiple(?,?,?,?); end;
+      // ?1 = return value, ?2=a(IN), ?3=b(IN), ?4=c(IN), ?5=d(OUT)
+      try (CallableStatement cs3 = conn.prepareCall(
+          "begin ? := test_return_multiple(?,?,?,?); end;")) {
+        cs3.registerOutParameter(1, Types.NUMERIC);
+        cs3.setInt(2, 1);
+        cs3.setInt(3, 2);
+        cs3.setInt(4, 2);
+        cs3.registerOutParameter(5, Types.NUMERIC);
+        cs3.executeUpdate();
+
+        String numericResult = cs3.getString(1);
+        String outParamResult = cs3.getString(5);
+        System.out.println("return value (param1): " + numericResult);
+        System.out.println("out param d (param5):  " + outParamResult);
+
+        // 1+2+2 = 5
+        assert "5".equals(numericResult)
+            : "Expected return value=5 but got " + numericResult;
+        // d = c*2 = 2*2 = 4
+        assert "4".equals(outParamResult)
+            : "Expected out param d=4 but got " + outParamResult;
+      }
+    } finally {
+      TestUtil.execute(conn, "DROP FUNCTION IF EXISTS test_return_multiple");
+    }
+  }
+
+  /**
+   * POLAR: Reproducer for "Received resultset tuples, but no field structure for them".
+   *
+   * <p><b>Root cause</b> — the crash happens at the {@code prepareThreshold}-th re-execution
+   * of a DO-block {@code CallableStatement} that returns result rows.  The exact sequence is:
+   *
+   * <ol>
+   *   <li>Executions 1 … (threshold-1) are <em>oneShot</em>.  Each one issues Parse + Bind +
+   *       DescribePortal + Execute + Sync.  After execution {@code n}, the underlying
+   *       {@code SimpleQuery} has {@code portalDescribed=true} and {@code fields≠null}.</li>
+   *   <li>Execution {@code threshold} is the first <em>server-prepared</em> execution
+   *       ({@code oneShot=false}).  {@code sendParse} calls {@code unprepare()} (because the
+   *       previous oneShot left no {@code statementName}), which resets
+   *       {@code portalDescribed=false}, then assigns a server-side statement name and calls
+   *       {@code sendDescribeStatement}.</li>
+   *   <li>{@code sendDescribeStatement} adds {@code query} to {@code pendingDescribePortalQueue}
+   *       and marks {@code portalDescribed=true} (and {@code statementDescribed=true}).
+   *       Because {@code describeStatement=true}, the subsequent {@code sendDescribePortal} is
+   *       <em>skipped</em>.  Then {@code sendSync} adds {@code sync} to
+   *       {@code pendingDescribePortalQueue}.</li>
+   *   <li>The server replies with two {@code RowDescription('T')} messages for this execution:
+   *       first from the {@code DescribeStatement} response, then from the {@code Execute}
+   *       response (because the DO block returns result rows).</li>
+   *   <li>The first {@code 'T'} handler dequeues {@code query} and calls
+   *       {@code query.setFields(fields)} — correct.</li>
+   *   <li>The second {@code 'T'} handler dequeues {@code sync} (next in queue) and calls
+   *       {@code sync.setFields(fields)} — <em>wrong target</em>.  {@code currentQuery.fields}
+   *       remains {@code null}.</li>
+   *   <li>{@code DataRow('D')} messages arrive — {@code tuples ≠ null}.</li>
+   *   <li>{@code CommandComplete('C')} handler checks: {@code fields == null && tuples != null}
+   *       → {@code IllegalStateException: Received resultset tuples, but no field structure
+   *       for them}.</li>
+   * </ol>
+   *
+   * <p>This bug is specific to the POLAR DO-block feature (Parser.java:1326).  Before that
+   * feature, DO blocks never returned result rows, so the second {@code RowDescription} from
+   * an {@code Execute} never occurred in this code path.
+   *
+   * <p><b>Fix</b>: when {@code describeStatement=true} (i.e., {@code sendDescribeStatement} is
+   * called), also enqueue the query a second time (or add logic so that the Execute's
+   * {@code RowDescription} is routed to {@code currentQuery}).  Alternatively, always send
+   * {@code DescribePortal} after {@code sendDescribeStatement} for queries that can return rows.
+   */
+  @Test
+  public void testDoBlockReExecuteFieldStructureError() throws Exception {
+    try {
+      TestUtil.execute(conn,
+          "CREATE OR REPLACE FUNCTION do_multi_out(a int, b out int, c out varchar2) "
+          + "RETURN int AS\n"
+          + "BEGIN\n"
+          + "  b := a * 2;\n"
+          + "  c := 'result_' || a;\n"
+          + "  RETURN a + 1;\n"
+          + "END;");
+
+      final String doBlockSql = "begin ? := do_multi_out(?, ?, ?); end;";
+
+      // Keep the CallableStatement open across all executions so we always hold
+      // the same underlying SimpleQuery object.
+      try (CallableStatement cs = conn.prepareCall(doBlockSql)) {
+
+        // Execute repeatedly across the server-prepare threshold (default=5).
+        // The crash occurs at iteration #(threshold+1) due to the sequence described above.
+        // Iterations 1..threshold-1: oneShot=true, works fine.
+        // Iteration threshold: oneShot=false (first server-prepare) → crash without fix.
+        for (int i = 1; i <= 10; i++) {
+          cs.registerOutParameter(1, Types.NUMERIC);
+          cs.setInt(2, i);
+          cs.registerOutParameter(3, Types.NUMERIC);
+          cs.registerOutParameter(4, Types.VARCHAR);
+          cs.execute();
+
+          int expectedReturn = i + 1;
+          int expectedB = i * 2;
+          String expectedC = "result_" + i;
+          assert cs.getInt(1) == expectedReturn
+              : "iter " + i + ": expected return=" + expectedReturn + " got " + cs.getObject(1);
+          assert cs.getInt(3) == expectedB
+              : "iter " + i + ": expected b=" + expectedB + " got " + cs.getObject(3);
+          assert expectedC.equals(cs.getString(4))
+              : "iter " + i + ": expected c=" + expectedC + " got " + cs.getObject(4);
+          System.out.println("Iteration #" + i + " OK: return=" + cs.getInt(1)
+              + ", b=" + cs.getInt(3) + ", c=" + cs.getString(4));
+        }
+      }
+    } finally {
+      TestUtil.execute(conn, "DROP FUNCTION IF EXISTS do_multi_out");
+    }
+  }
 }

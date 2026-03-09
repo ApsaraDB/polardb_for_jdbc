@@ -2049,6 +2049,23 @@ public class QueryExecutorImpl extends QueryExecutorBase {
       if (!query.isPortalDescribed() || forceDescribePortal) {
         sendDescribePortal(query, portal);
       }
+    } else if (!noMeta && describeStatement) {
+      /*
+       * POLAR: When sendDescribeStatement was invoked above, the server responds with
+       * ParameterDescription followed by RowDescription-or-NoData.  For queries whose result
+       * shape is only known after binding parameters (e.g. POLAR DO-block anonymous blocks that
+       * return rows via OUT parameters), the server returns NoData at DescribeStatement time
+       * (because it cannot determine the row structure from the SQL text alone).  The row
+       * structure only becomes known after a Bind + DescribePortal.
+       *
+       * If we skip DescribePortal here (because describeStatement=true), the Execute response
+       * will contain DataRow messages but fields stays null → crash:
+       *   "Received resultset tuples, but no field structure for them"
+       *
+       * Fix: always send DescribePortal after sendDescribeStatement so that the portal's
+       * row description is always available before Execute.
+       */
+      sendDescribePortal(query, portal);
     }
 
     sendExecute(query, portal, rows);
