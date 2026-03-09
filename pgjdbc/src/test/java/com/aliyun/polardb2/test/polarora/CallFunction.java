@@ -863,4 +863,99 @@ public class CallFunction {
       TestUtil.execute(conn, "DROP PROCEDURE IF EXISTS do_update_stats;");
     }
   }
+
+  /**
+   * Verifies that registerOutParameter(int, int, String) correctly resolves a custom TABLE OF type
+   * (ACTOR_TABLE_ARRAY) by name and returns the array result via getArray().
+   * TABLE OF is an unbounded nested-table collection, unlike the bounded VARRAY.
+   */
+  @Test
+  public void testTableOfReturnType() throws Exception {
+    try {
+      // Create the custom nested-table (TABLE OF) type
+      TestUtil.execute(conn,
+          "CREATE OR REPLACE TYPE actor_table_array AS TABLE OF VARCHAR2(200)");
+
+      // Create a function returning that TABLE OF type
+      TestUtil.execute(conn,
+          "CREATE OR REPLACE FUNCTION get_actor_names_table RETURN actor_table_array AS\n"
+          + "  names actor_table_array := actor_table_array();\n"
+          + "BEGIN\n"
+          + "  names.extend;\n"
+          + "  names(1) := 'Charlie';\n"
+          + "  names.extend;\n"
+          + "  names(2) := 'Diana';\n"
+          + "  names.extend;\n"
+          + "  names(3) := 'Eve';\n"
+          + "  RETURN names;\n"
+          + "END;");
+
+      // Call the function with registerOutParameter(int, int, String) for the TABLE OF type
+      try (CallableStatement cs = conn.prepareCall("{ ? = call get_actor_names_table() }")) {
+        cs.registerOutParameter(1, Types.ARRAY, "actor_table_array");
+        cs.execute();
+
+        java.sql.Array result = cs.getArray(1);
+        assert result != null : "Expected non-null ARRAY result";
+
+        Object[] names = (Object[]) result.getArray();
+        assert names != null && names.length == 3
+            : "Expected 3 elements but got " + (names == null ? "null" : names.length);
+        assert "Charlie".equals(names[0])
+            : "Expected names[0]='Charlie' but got " + names[0];
+        assert "Diana".equals(names[1])
+            : "Expected names[1]='Diana' but got " + names[1];
+        assert "Eve".equals(names[2])
+            : "Expected names[2]='Eve' but got " + names[2];
+      }
+    } finally {
+      TestUtil.execute(conn, "DROP FUNCTION IF EXISTS get_actor_names_table");
+      TestUtil.execute(conn, "DROP TYPE IF EXISTS actor_table_array");
+    }
+  }
+
+  /**
+   * Verifies that registerOutParameter(int, int, String) correctly resolves a custom VARRAY type
+   * (ACTOR_NAME_ARRAY) by name and returns the array result via getArray().
+   */
+  @Test
+  public void testVarrayReturnType() throws Exception {
+    try {
+      // Create the custom VARRAY type
+      TestUtil.execute(conn,
+          "CREATE OR REPLACE TYPE actor_name_array AS VARRAY(100) OF VARCHAR2(200)");
+
+      // Create a function returning that VARRAY type
+      TestUtil.execute(conn,
+          "CREATE OR REPLACE FUNCTION get_actor_names RETURN actor_name_array AS\n"
+          + "  names actor_name_array := actor_name_array();\n"
+          + "BEGIN\n"
+          + "  names.extend;\n"
+          + "  names(1) := 'Alice';\n"
+          + "  names.extend;\n"
+          + "  names(2) := 'Bob';\n"
+          + "  RETURN names;\n"
+          + "END;");
+
+      // Call the function with registerOutParameter(int, int, String) for the custom VARRAY type
+      try (CallableStatement cs = conn.prepareCall("{ ? = call get_actor_names() }")) {
+        cs.registerOutParameter(1, Types.ARRAY, "actor_name_array");
+        cs.execute();
+
+        java.sql.Array result = cs.getArray(1);
+        assert result != null : "Expected non-null ARRAY result";
+
+        Object[] names = (Object[]) result.getArray();
+        assert names != null && names.length == 2
+            : "Expected 2 elements but got " + (names == null ? "null" : names.length);
+        assert "Alice".equals(names[0])
+            : "Expected names[0]='Alice' but got " + names[0];
+        assert "Bob".equals(names[1])
+            : "Expected names[1]='Bob' but got " + names[1];
+      }
+    } finally {
+      TestUtil.execute(conn, "DROP FUNCTION IF EXISTS get_actor_names");
+      TestUtil.execute(conn, "DROP TYPE IF EXISTS actor_name_array");
+    }
+  }
 }

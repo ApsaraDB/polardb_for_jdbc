@@ -8,6 +8,7 @@ package com.aliyun.polardb2.jdbc;
 import static com.aliyun.polardb2.util.internal.Nullness.castNonNull;
 
 import com.aliyun.polardb2.Driver;
+import com.aliyun.polardb2.core.Oid;
 import com.aliyun.polardb2.core.ParameterList;
 import com.aliyun.polardb2.core.Query;
 import com.aliyun.polardb2.util.GT;
@@ -34,6 +35,7 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.Calendar;
+import java.util.Locale;
 import java.util.Map;
 
 class PgCallableStatement extends PgPreparedStatement implements CallableStatement {
@@ -444,6 +446,23 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   @Override
   public void registerOutParameter(@Positive int parameterIndex, int sqlType)
       throws SQLException {
+    doRegisterOutParameter(parameterIndex, sqlType, null);
+  }
+
+  /**
+   * Core implementation shared by all registerOutParameter overloads.
+   *
+   * <p>Normalizes the SQL type, resolves the database OID (using {@code typeName} for custom types
+   * such as VARRAY, or falling back to the SQL type mapping when {@code typeName} is null/empty),
+   * and records the parameter registration state.
+   *
+   * @param parameterIndex 1-based parameter index
+   * @param sqlType        SQL type code from {@link java.sql.Types}
+   * @param typeName       optional custom type name (e.g. "ACTOR_NAME_ARRAY"); may be null
+   * @throws SQLException if the statement is not a function call or the connection is closed
+   */
+  private void doRegisterOutParameter(@Positive int parameterIndex, int sqlType,
+      @Nullable String typeName) throws SQLException {
     checkClosed();
     switch (sqlType) {
       case Types.TINYINT:
@@ -489,13 +508,33 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
           PSQLState.STATEMENT_NOT_ALLOWED_IN_FUNCTION_CALL);
     }
 
-    /* POLAR: get oid from sqlType */
-    Integer oid = connection.getTypeInfo().getOidFromSqlType(new Integer(sqlType));
+    // POLAR: When typeName is provided (e.g. VARRAY or custom array type), look up its OID by
+    // name so that the wire protocol uses the correct type OID for the OUT parameter slot.
+    int oid;
+    if (typeName != null && !typeName.isEmpty()) {
+      oid = connection.getTypeInfo().getPGType(typeName.toLowerCase(Locale.ROOT));
+      if (oid == Oid.UNSPECIFIED) {
+        oid = connection.getTypeInfo().getPGType(typeName.toUpperCase(Locale.ROOT));
+      }
+      if (oid == Oid.UNSPECIFIED) {
+        oid = connection.getTypeInfo().getPGType(typeName);
+      }
+      if (oid == Oid.UNSPECIFIED) {
+        // last resort: derive oid from sqlType
+        Integer derived = connection.getTypeInfo().getOidFromSqlType(sqlType);
+        oid = derived != null ? derived : Oid.UNSPECIFIED;
+      }
+    } else {
+      /* POLAR: get oid from sqlType */
+      Integer derived = connection.getTypeInfo().getOidFromSqlType(sqlType);
+      oid = derived != null ? derived : Oid.UNSPECIFIED;
+    }
+
     /* POLAR: For DO anonymous blocks, $N parameters are bound directly in the SQL;
      * we do not call preparedParameters.registerOutParameter since there is no
      * corresponding positional ? placeholder. We only record the expected return type. */
     if (!isDoBlock) {
-      preparedParameters.registerOutParameter(parameterIndex, oid.intValue());
+      preparedParameters.registerOutParameter(parameterIndex, oid);
     }
     // functionReturnType contains the user supplied value to check
     // testReturn contains a modified version to make it easier to
@@ -869,7 +908,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
   public void registerOutParameter(@Positive int parameterIndex, int sqlType, String typeName)
       throws SQLException {
-    throw Driver.notImplemented(this.getClass(), "registerOutParameter(int,int,String)");
+    doRegisterOutParameter(parameterIndex, sqlType, typeName);
   }
 
   public void setObject(String parameterName, @Nullable Object x, java.sql.SQLType targetSqlType,
@@ -894,7 +933,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
   public void registerOutParameter(@Positive int parameterIndex, java.sql.SQLType sqlType, String typeName)
       throws SQLException {
-    throw Driver.notImplemented(this.getClass(), "registerOutParameter");
+    registerOutParameter(parameterIndex, sqlType.getVendorTypeNumber(), typeName);
   }
 
   public void registerOutParameter(String parameterName, java.sql.SQLType sqlType)
