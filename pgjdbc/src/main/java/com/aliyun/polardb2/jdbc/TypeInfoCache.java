@@ -589,7 +589,13 @@ public class TypeInfoCache implements TypeInfo {
 
   public int getPGArrayType(@Nullable String elementTypeName) throws SQLException {
     elementTypeName = getTypeForAlias(elementTypeName);
-    return getPGType(elementTypeName + "[]");
+    // First try the standard PostgreSQL array notation (elementType[])
+    int oid = getPGType(elementTypeName + "[]");
+    // If not found, try the type name directly (for VARRAY types like actor_name_array)
+    if (oid == Oid.UNSPECIFIED) {
+      oid = getPGType(elementTypeName);
+    }
+    return oid;
   }
 
   /**

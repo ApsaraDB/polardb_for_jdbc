@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.lang.reflect.Array;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Struct;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -1078,6 +1079,30 @@ final class ArrayEncoding {
         }
         if (array[i] == null) {
           sb.append('N').append('U').append('L').append('L');
+        } else if (array[i] instanceof Struct) {
+          // Handle Struct objects (e.g., PgStruct) by converting to PostgreSQL record format
+          try {
+            Struct struct = (Struct) array[i];
+            Object[] attributes = struct.getAttributes();
+            // Build the record string: (value1,value2)
+            StringBuilder recordSb = new StringBuilder();
+            recordSb.append('(');
+            for (int j = 0; j < attributes.length; j++) {
+              if (j > 0) {
+                recordSb.append(',');
+              }
+              if (attributes[j] == null) {
+                recordSb.append('N').append('U').append('L').append('L');
+              } else {
+                recordSb.append(attributes[j].toString());
+              }
+            }
+            recordSb.append(')');
+            // Escape the entire record as an array element
+            PgArray.escapeArrayElement(sb, recordSb.toString());
+          } catch (SQLException e) {
+            throw new IllegalStateException("Failed to get Struct attributes", e);
+          }
         } else if (array[i].getClass().isArray()) {
           if (array[i] instanceof byte[]) {
             throw new UnsupportedOperationException("byte[] nested inside Object[]");
