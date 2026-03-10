@@ -73,7 +73,7 @@ public enum PGProperty {
    */
   ALLOW_SELECT_IN_EXECUTE_UPDATE(
       "allowSelectInExecuteUpdate",
-      "false",
+      "true",
       "Allow executeUpdate to execute SELECT queries without throwing an error"),
 
   /**
