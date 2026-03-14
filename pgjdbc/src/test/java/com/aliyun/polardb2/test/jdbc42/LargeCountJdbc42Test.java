@@ -178,7 +178,11 @@ public class LargeCountJdbc42Test extends BaseTest4 {
    */
   @Test
   public void testExecuteLargeUpdateStatementSELECT() throws Exception {
-    try (Statement stmt = con.createStatement()) {
+    // Test with allowSelectInExecuteUpdate disabled
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    try (java.sql.Connection testConn = TestUtil.openDB(props);
+         Statement stmt = testConn.createStatement()) {
       long count = stmt.executeLargeUpdate("select true from generate_series(1, 5)");
       Assert.fail("A result was returned when none was expected. Returned: " + count);
     } catch (SQLException e) {
@@ -191,7 +195,11 @@ public class LargeCountJdbc42Test extends BaseTest4 {
    */
   @Test
   public void testExecuteLargeUpdatePreparedStatementSELECT() throws Exception {
-    try (PreparedStatement stmt = con.prepareStatement("select true from generate_series(?, ?)")) {
+    // Test with allowSelectInExecuteUpdate disabled
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    try (java.sql.Connection testConn = TestUtil.openDB(props);
+         PreparedStatement stmt = testConn.prepareStatement("select true from generate_series(?, ?)")) {
       stmt.setLong(1, 1);
       stmt.setLong(2, 5L);
       long count = stmt.executeLargeUpdate();

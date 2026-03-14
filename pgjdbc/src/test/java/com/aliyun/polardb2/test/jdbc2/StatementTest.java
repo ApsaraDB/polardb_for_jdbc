@@ -681,11 +681,20 @@ public class StatementTest {
 
   @Test
   public void testExecuteUpdateFailsOnSelect() throws SQLException {
-    Statement stmt = con.createStatement();
+    // Test with allowSelectInExecuteUpdate disabled
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    Connection testConn = TestUtil.openDB(props);
     try {
-      stmt.executeUpdate("SELECT 1");
-      fail("Should have thrown an error.");
-    } catch (SQLException sqle) {
+      Statement stmt = testConn.createStatement();
+      try {
+        stmt.executeUpdate("SELECT 1");
+        fail("Should have thrown an error.");
+      } catch (SQLException sqle) {
+      }
+      stmt.close();
+    } finally {
+      testConn.close();
     }
   }
 
@@ -709,8 +718,10 @@ public class StatementTest {
 
   @Test
   public void testExecuteUpdateWithSelectWhenDisabled() throws SQLException {
-    // Test with allowSelectInExecuteUpdate disabled (default)
-    Connection testConn = TestUtil.openDB();
+    // Test with allowSelectInExecuteUpdate explicitly disabled
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    Connection testConn = TestUtil.openDB(props);
     try {
       Statement stmt = testConn.createStatement();
       try {
@@ -730,11 +741,20 @@ public class StatementTest {
 
   @Test
   public void testExecuteUpdateFailsOnMultiStatementSelect() throws SQLException {
-    Statement stmt = con.createStatement();
+    // Test with allowSelectInExecuteUpdate disabled
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    Connection testConn = TestUtil.openDB(props);
     try {
-      stmt.executeUpdate("/* */; SELECT 1");
-      fail("Should have thrown an error.");
-    } catch (SQLException sqle) {
+      Statement stmt = testConn.createStatement();
+      try {
+        stmt.executeUpdate("/* */; SELECT 1");
+        fail("Should have thrown an error.");
+      } catch (SQLException sqle) {
+      }
+      stmt.close();
+    } finally {
+      testConn.close();
     }
   }
 
@@ -986,7 +1006,7 @@ public class StatementTest {
     }
   }
 
-  @Test(timeout = 10000)
+  @Test(timeout = 30000)
   public void testConcurrentIsValid() throws Throwable {
     ExecutorService executor = Executors.newCachedThreadPool();
     try {

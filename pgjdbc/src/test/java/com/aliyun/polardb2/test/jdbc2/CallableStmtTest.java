@@ -115,30 +115,47 @@ public class CallableStmtTest extends BaseTest4 {
 
   @Test
   public void testGetUpdateCount() throws SQLException {
-    CallableStatement call = con.prepareCall(func + pkgName + "getDouble (?) }");
-    call.setDouble(2, 3.04);
-    call.registerOutParameter(1, Types.DOUBLE);
-    call.execute();
-    assertEquals(-1, call.getUpdateCount());
-    assertNull(call.getResultSet());
-    assertEquals(42.42, call.getDouble(1), 0.00001);
-    call.close();
+    // Test with allowSelectInExecuteUpdate disabled to ensure getUpdateCount returns -1
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    PGProperty.ESCAPE_SYNTAX_CALL_MODE.set(props, "select");
+    Connection testConn = TestUtil.openDB(props);
+    try {
+      // Create the function in the new connection
+      Statement stmt = testConn.createStatement();
+      stmt.execute(
+          "CREATE OR REPLACE FUNCTION testspg__getDouble (float) "
+          + "RETURNS float AS ' DECLARE inString alias for $1; begin "
+          + "return 42.42; end; ' LANGUAGE plpgsql;");
+      stmt.close();
 
-    // test without an out parameter
-    call = con.prepareCall("{ call " + pkgName + "getDouble(?) }");
-    call.setDouble(1, 3.04);
-    call.execute();
-    assertEquals(-1, call.getUpdateCount());
-    ResultSet rs = call.getResultSet();
-    assertNotNull(rs);
-    assertTrue(rs.next());
-    assertEquals(42.42, rs.getDouble(1), 0.00001);
-    assertTrue(!rs.next());
-    rs.close();
+      CallableStatement call = testConn.prepareCall(func + pkgName + "getDouble (?) }");
+      call.setDouble(2, 3.04);
+      call.registerOutParameter(1, Types.DOUBLE);
+      call.execute();
+      assertEquals(-1, call.getUpdateCount());
+      assertNull(call.getResultSet());
+      assertEquals(42.42, call.getDouble(1), 0.00001);
+      call.close();
 
-    assertEquals(-1, call.getUpdateCount());
-    assertTrue(!call.getMoreResults());
-    call.close();
+      // test without an out parameter
+      call = testConn.prepareCall("{ call " + pkgName + "getDouble(?) }");
+      call.setDouble(1, 3.04);
+      call.execute();
+      assertEquals(-1, call.getUpdateCount());
+      ResultSet rs = call.getResultSet();
+      assertNotNull(rs);
+      assertTrue(rs.next());
+      assertEquals(42.42, rs.getDouble(1), 0.00001);
+      assertTrue(!rs.next());
+      rs.close();
+
+      assertEquals(-1, call.getUpdateCount());
+      assertTrue(!call.getMoreResults());
+      call.close();
+    } finally {
+      testConn.close();
+    }
   }
 
   @Test

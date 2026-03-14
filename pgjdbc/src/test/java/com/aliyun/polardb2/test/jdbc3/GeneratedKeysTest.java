@@ -12,6 +12,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.aliyun.polardb2.PGProperty;
 import com.aliyun.polardb2.PGStatement;
 import com.aliyun.polardb2.core.ServerVersion;
 import com.aliyun.polardb2.test.TestUtil;
@@ -23,6 +24,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -30,6 +32,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Properties;
 
 @RunWith(Parameterized.class)
 public class GeneratedKeysTest extends BaseTest4 {
@@ -160,25 +163,36 @@ public class GeneratedKeysTest extends BaseTest4 {
 
   @Test
   public void testEmptyRSWithoutReturning() throws SQLException {
-    Statement stmt = con.createStatement();
+    // When returningClause is used, we need allowSelectInExecuteUpdate=false to throw error
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    Connection testConn = TestUtil.openDB(props);
     try {
-      int count =
-          stmt.executeUpdate("INSERT INTO genkeys VALUES (1, 'a', 2)" + returningClause + "; ",
-              Statement.NO_GENERATED_KEYS);
-      assertEquals(1, count);
-      if (returningInQuery.columnsReturned() > 0) {
-        fail(
-            "A result was returned when none was expected error should happen when executing executeUpdate('... returning ...')");
+      // Create the table in the new connection
+      TestUtil.createTempTable(testConn, "genkeys", "a serial, b varchar(5), c int");
+      Statement stmt = testConn.createStatement();
+      try {
+        int count =
+            stmt.executeUpdate("INSERT INTO genkeys VALUES (1, 'a', 2)" + returningClause + "; ",
+                Statement.NO_GENERATED_KEYS);
+        assertEquals(1, count);
+        if (returningInQuery.columnsReturned() > 0) {
+          fail(
+              "A result was returned when none was expected error should happen when executing executeUpdate('... returning ...')");
+        }
+      } catch (SQLException e) {
+        if (returningInQuery.columnsReturned() > 0 && "0100E".equals(e.getSQLState())) {
+          // A result was returned when none was expected
+          return; // just as expected
+        }
+        throw e;
       }
-    } catch (SQLException e) {
-      if (returningInQuery.columnsReturned() > 0 && "0100E".equals(e.getSQLState())) {
-        // A result was returned when none was expected
-        return; // just as expected
-      }
-      throw e;
+      ResultSet rs = stmt.getGeneratedKeys();
+      assertFalse("Statement.NO_GENERATED_KEYS => stmt.getGeneratedKeys() should be empty", rs.next());
+    } finally {
+      TestUtil.dropTable(testConn, "genkeys");
+      testConn.close();
     }
-    ResultSet rs = stmt.getGeneratedKeys();
-    assertFalse("Statement.NO_GENERATED_KEYS => stmt.getGeneratedKeys() should be empty", rs.next());
   }
 
   @Test
@@ -242,17 +256,28 @@ public class GeneratedKeysTest extends BaseTest4 {
   public void testWithInsertSelect() throws SQLException {
     assumeMinimumServerVersion(ServerVersion.v9_1);
     Assume.assumeTrue(returningInQuery != ReturningInQuery.NO);
-    Statement stmt = con.createStatement();
-    int count = stmt.executeUpdate(
-        "WITH x as (INSERT INTO genkeys(a,b,c) VALUES (1, 'a', 2) " + returningClause
-            + ") select * from x",
-        new String[]{"c", "b"});
-    assertEquals("rowcount", -1, count);
-    // TODO: should SELECT produce rows through getResultSet or getGeneratedKeys?
-    ResultSet rs = stmt.getResultSet();
-    assertTrue(rs.next());
-    assertCB1(rs);
-    assertTrue(!rs.next());
+    // When WITH...SELECT is used, we need allowSelectInExecuteUpdate=false to get -1 count
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    Connection testConn = TestUtil.openDB(props);
+    try {
+      // Create the table in the new connection
+      TestUtil.createTempTable(testConn, "genkeys", "a serial, b varchar(5), c int");
+      Statement stmt = testConn.createStatement();
+      int count = stmt.executeUpdate(
+          "WITH x as (INSERT INTO genkeys(a,b,c) VALUES (1, 'a', 2) " + returningClause
+              + ") select * from x",
+          new String[]{"c", "b"});
+      assertEquals("rowcount", -1, count);
+      // TODO: should SELECT produce rows through getResultSet or getGeneratedKeys?
+      ResultSet rs = stmt.getResultSet();
+      assertTrue(rs.next());
+      assertCB1(rs);
+      assertTrue(!rs.next());
+    } finally {
+      TestUtil.dropTable(testConn, "genkeys");
+      testConn.close();
+    }
   }
 
   @Test
@@ -392,24 +417,35 @@ public class GeneratedKeysTest extends BaseTest4 {
 
   @Test
   public void testGeneratedKeysCleared() throws SQLException {
-    Statement stmt = con.createStatement();
-    stmt.executeUpdate("INSERT INTO genkeys VALUES (1, 'a', 2)" + returningClause + "; ", Statement.RETURN_GENERATED_KEYS);
-    ResultSet rs = stmt.getGeneratedKeys();
-    assertTrue(rs.next());
+    // When returningClause is used, we need allowSelectInExecuteUpdate=false to throw error
+    Properties props = new Properties();
+    PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.set(props, false);
+    Connection testConn = TestUtil.openDB(props);
     try {
-      stmt.executeUpdate("INSERT INTO genkeys VALUES (2, 'b', 3)" + returningClause);
-      if (returningInQuery.columnsReturned() > 0) {
-        fail("A result was returned when none was expected error should happen when executing executeUpdate('... returning ...')");
+      // Create the table in the new connection
+      TestUtil.createTempTable(testConn, "genkeys", "a serial, b varchar(5), c int");
+      Statement stmt = testConn.createStatement();
+      stmt.executeUpdate("INSERT INTO genkeys VALUES (1, 'a', 2)" + returningClause + "; ", Statement.RETURN_GENERATED_KEYS);
+      ResultSet rs = stmt.getGeneratedKeys();
+      assertTrue(rs.next());
+      try {
+        stmt.executeUpdate("INSERT INTO genkeys VALUES (2, 'b', 3)" + returningClause);
+        if (returningInQuery.columnsReturned() > 0) {
+          fail("A result was returned when none was expected error should happen when executing executeUpdate('... returning ...')");
+        }
+      } catch (SQLException e) {
+        if (returningInQuery.columnsReturned() > 0 && "0100E".equals(e.getSQLState())) {
+          // A result was returned when none was expected
+          return; // just as expected
+        }
+        throw e;
       }
-    } catch (SQLException e) {
-      if (returningInQuery.columnsReturned() > 0 && "0100E".equals(e.getSQLState())) {
-        // A result was returned when none was expected
-        return; // just as expected
-      }
-      throw e;
+      rs = stmt.getGeneratedKeys();
+      assertTrue(!rs.next());
+    } finally {
+      TestUtil.dropTable(testConn, "genkeys");
+      testConn.close();
     }
-    rs = stmt.getGeneratedKeys();
-    assertTrue(!rs.next());
   }
 
   @Test
