@@ -1518,6 +1518,28 @@ public class Parser {
           PSQLState.STATEMENT_NOT_ALLOWED_IN_FUNCTION_CALL);
     }
 
+    String s = jdbcSql.substring(startIndex, endIndex);
+
+    /* POLAR: Oracle sequence pseudocolumn support.
+     * Detect patterns like "seq_name.nextval" or "schema.seq_name.currval" (with optional empty parens).
+     * These are Oracle sequence pseudocolumns, NOT callable functions.
+     * They must be retrieved via SELECT rather than CALL/SELECT-FROM-FUNC.
+     * e.g. {? = call cas_txn_seq.nextval()} -> SELECT cas_txn_seq.nextval FROM dual
+     *      {? = call public.cas_txn_seq.nextval()} -> SELECT public.cas_txn_seq.nextval FROM dual
+     */
+    if (outParamBeforeFunc) {
+      // Match: [schema.]seq_name.nextval or [schema.]seq_name.currval, with optional empty parens
+      Pattern seqPattern = Pattern.compile(
+          "^((?:\\w+\\.)+(?:nextval|currval))\\s*(\\(\\s*\\))?\\s*$",
+          Pattern.CASE_INSENSITIVE);
+      Matcher seqMatcher = seqPattern.matcher(s.trim());
+      if (seqMatcher.matches()) {
+        String seqExpr = seqMatcher.group(1);
+        sql = "select " + seqExpr + " from dual";
+        return new JdbcCallParseInfo(sql, true, outParamBeforeFunc, false, 0, true);
+      }
+    }
+
     String prefix;
     String suffix;
     if (escapeSyntaxCallMode == EscapeSyntaxCallMode.SELECT || serverVersion < 110000
@@ -1528,8 +1550,6 @@ public class Parser {
       prefix = "call ";
       suffix = "";
     }
-
-    String s = jdbcSql.substring(startIndex, endIndex);
     int prefixLength = prefix.length();
     StringBuilder sb = new StringBuilder(prefixLength + jdbcSql.length() + suffix.length() + 10);
     sb.append(prefix);

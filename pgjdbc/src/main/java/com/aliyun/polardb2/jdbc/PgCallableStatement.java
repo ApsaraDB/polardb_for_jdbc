@@ -44,6 +44,8 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   private final boolean outParamBeforeFunc;
   /* POLAR: DO anonymous block with $N INOUT parameters */
   private final boolean isDoBlock;
+  /* POLAR: Oracle sequence pseudocolumn (e.g. seq.nextval / seq.currval) */
+  private final boolean isSequencePseudocol;
   // functionReturnType contains the user supplied value to check
   // testReturn contains a modified version to make it easier to
   // check the getXXX methods..
@@ -60,6 +62,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     this.isFunction = preparedQuery.isFunction;
     this.outParamBeforeFunc = preparedQuery.outParamBeforeFunc;
     this.isDoBlock = preparedQuery.isDoBlock;
+    this.isSequencePseudocol = preparedQuery.isSequencePseudocol;
 
     /* POLAR: get the unamed SQL */
     if (this.preparedQuery.unProc != null && this.preparedQuery.unProc.isUnamedProc()) {
@@ -78,6 +81,9 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       if (this.isDoBlock && preparedQuery.doBlockParamCount > 0) {
         // $N-style DO block: explicit param count from SQL scanning
         baseCount = preparedQuery.doBlockParamCount;
+      } else if (this.isSequencePseudocol) {
+        // POLAR: sequence pseudocolumn: exactly 1 OUT parameter (the sequence value), no ? params
+        baseCount = 1;
       } else {
         // Normal function/procedure call, or ?-style DO block (? converted to $N by parseJdbcSql)
         baseCount = this.preparedParameters.getParameterCount();
@@ -177,8 +183,9 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
       /* POLAR: For DO anonymous blocks, the result set columns map directly to $1, $2, ...
        * in order. Skip the outParameterCount check since DO blocks do not use
-       * preparedParameters.registerOutParameter. */
-      if (!isDoBlock) {
+       * preparedParameters.registerOutParameter.
+       * Similarly, for sequence pseudocolumns, no ? placeholder was registered; skip the check. */
+      if (!isDoBlock && !isSequencePseudocol) {
         int outParameterCount = preparedParameters.getOutParameterCount();
 
         // POLAR: Allow execution when cols <= outParameterCount.
@@ -532,8 +539,10 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
     /* POLAR: For DO anonymous blocks, $N parameters are bound directly in the SQL;
      * we do not call preparedParameters.registerOutParameter since there is no
-     * corresponding positional ? placeholder. We only record the expected return type. */
-    if (!isDoBlock) {
+     * corresponding positional ? placeholder. We only record the expected return type.
+     * Similarly, for sequence pseudocolumns (seq.nextval/seq.currval), the SELECT has
+     * no ? placeholder—skip parameter registration and just record the return type. */
+    if (!isDoBlock && !isSequencePseudocol) {
       preparedParameters.registerOutParameter(parameterIndex, oid);
     }
     // functionReturnType contains the user supplied value to check

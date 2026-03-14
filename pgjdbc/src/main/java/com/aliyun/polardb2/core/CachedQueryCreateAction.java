@@ -61,6 +61,7 @@ class CachedQueryCreateAction implements LruCache.CreateAction<Object, CachedQue
     boolean outParamBeforeFunc;
     boolean isDoBlock = false;
     int doBlockParamCount = 0;
+    boolean isSequencePseudocol = false;
     if (key instanceof CallableQueryKey) {
       JdbcCallParseInfo callInfo =
           Parser.modifyJdbcCall(parsedSql, queryExecutor.getStandardConformingStrings(),
@@ -70,6 +71,7 @@ class CachedQueryCreateAction implements LruCache.CreateAction<Object, CachedQue
       outParamBeforeFunc = callInfo.outParamBeforeFunc();
       isDoBlock = callInfo.isDoBlock();
       doBlockParamCount = callInfo.getDoBlockParamCount();
+      isSequencePseudocol = callInfo.isSequencePseudocol();
     } else {
       isFunction = false;
       outParamBeforeFunc = false;
@@ -92,6 +94,6 @@ class CachedQueryCreateAction implements LruCache.CreateAction<Object, CachedQue
         );
 
     Query query = queryExecutor.wrap(queries);
-    return new CachedQuery(key, query, isFunction, outParamBeforeFunc, proc, isDoBlock, doBlockParamCount);
+    return new CachedQuery(key, query, isFunction, outParamBeforeFunc, proc, isDoBlock, doBlockParamCount, isSequencePseudocol);
   }
 }

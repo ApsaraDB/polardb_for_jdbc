@@ -15,6 +15,8 @@ public class JdbcCallParseInfo {
   /* POLAR: DO anonymous block with $N INOUT parameters */
   private final boolean isDoBlock;
   private final int doBlockParamCount;
+  /* POLAR: Oracle sequence pseudocolumn (e.g. seq.nextval / seq.currval) */
+  private final boolean isSequencePseudocol;
 
   public JdbcCallParseInfo(String sql, boolean isFunction, boolean outParamBeforeFunc) {
     this.sql = sql;
@@ -22,6 +24,7 @@ public class JdbcCallParseInfo {
     this.outParamBeforeFunc = outParamBeforeFunc;
     this.isDoBlock = false;
     this.doBlockParamCount = 0;
+    this.isSequencePseudocol = false;
   }
 
   /* POLAR: constructor for DO anonymous block */
@@ -32,6 +35,18 @@ public class JdbcCallParseInfo {
     this.outParamBeforeFunc = outParamBeforeFunc;
     this.isDoBlock = isDoBlock;
     this.doBlockParamCount = doBlockParamCount;
+    this.isSequencePseudocol = false;
+  }
+
+  /* POLAR: constructor for Oracle sequence pseudocolumn */
+  public JdbcCallParseInfo(String sql, boolean isFunction, boolean outParamBeforeFunc,
+      boolean isDoBlock, int doBlockParamCount, boolean isSequencePseudocol) {
+    this.sql = sql;
+    this.isFunction = isFunction;
+    this.outParamBeforeFunc = outParamBeforeFunc;
+    this.isDoBlock = isDoBlock;
+    this.doBlockParamCount = doBlockParamCount;
+    this.isSequencePseudocol = isSequencePseudocol;
   }
 
   /**
@@ -77,6 +92,16 @@ public class JdbcCallParseInfo {
    */
   public int getDoBlockParamCount() {
     return doBlockParamCount;
+  }
+
+  /**
+   * POLAR: Returns if given SQL is an Oracle sequence pseudocolumn access
+   * (e.g. seq_name.nextval or seq_name.currval).
+   *
+   * @return {@code true} if given SQL is a sequence pseudocolumn SELECT
+   */
+  public boolean isSequencePseudocol() {
+    return isSequencePseudocol;
   }
 
 }

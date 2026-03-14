@@ -23,6 +23,8 @@ public class CachedQuery implements CanEstimateSize {
   /* POLAR: DO anonymous block with $N INOUT parameters */
   public final boolean isDoBlock;
   public final int doBlockParamCount;
+  /* POLAR: Oracle sequence pseudocolumn (e.g. seq.nextval / seq.currval) */
+  public final boolean isSequencePseudocol;
 
   private int executeCount;
 
@@ -35,6 +37,11 @@ public class CachedQuery implements CanEstimateSize {
 
   public CachedQuery(Object key, Query query, boolean isFunction, boolean outParamBeforeFunc,
       UnNamedProc proc, boolean isDoBlock, int doBlockParamCount) {
+    this(key, query, isFunction, outParamBeforeFunc, proc, isDoBlock, doBlockParamCount, false);
+  }
+
+  public CachedQuery(Object key, Query query, boolean isFunction, boolean outParamBeforeFunc,
+      UnNamedProc proc, boolean isDoBlock, int doBlockParamCount, boolean isSequencePseudocol) {
     assert key instanceof String || key instanceof CanEstimateSize
         : "CachedQuery.key should either be String or implement CanEstimateSize."
         + " Actual class is " + key.getClass();
@@ -45,6 +52,7 @@ public class CachedQuery implements CanEstimateSize {
     this.unProc = proc;
     this.isDoBlock = isDoBlock;
     this.doBlockParamCount = doBlockParamCount;
+    this.isSequencePseudocol = isSequencePseudocol;
   }
 
   public void increaseExecuteCount() {
