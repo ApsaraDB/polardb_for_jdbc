@@ -1512,12 +1512,13 @@ public class PgConnection implements BaseConnection {
     final TypeInfo typeInfo = getTypeInfo();
 
     final int oid = typeInfo.getPGArrayType(typeName);
-    final char delim = typeInfo.getArrayDelimiter(oid);
 
     if (oid == Oid.UNSPECIFIED) {
       throw new PSQLException(GT.tr("Unable to find server array type for provided name {0}.", typeName),
           PSQLState.INVALID_NAME);
     }
+
+    final char delim = typeInfo.getArrayDelimiter(oid);
 
     if (elements == null) {
       return makeArray(oid, null);

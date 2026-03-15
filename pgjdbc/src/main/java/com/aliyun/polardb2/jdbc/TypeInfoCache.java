@@ -640,7 +640,12 @@ public class TypeInfoCache implements TypeInfo {
 
       ResultSet rs = castNonNull(getArrayDelimiterStatement.getResultSet());
       if (!rs.next()) {
-        throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
+        // POLAR: For types without a typelem relationship (e.g. cross-package
+        // TABLE OF RECORD types), default to comma delimiter instead of crashing.
+        rs.close();
+        delim = ',';
+        arrayOidToDelimiter.put(oid, delim);
+        return delim;
       }
 
       String s = castNonNull(rs.getString(1));

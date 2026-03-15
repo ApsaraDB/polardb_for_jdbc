@@ -32,4 +32,13 @@ public class PgStruct implements Struct {
   public Object[] getAttributes(Map<String, Class<?>> map) throws SQLException {
     return getAttributes();
   }
+
+  @Override
+  public String toString() {
+    try {
+      return PostgresStructConverter.objectArrayToPostgresStruct(attributes);
+    } catch (Exception e) {
+      return super.toString();
+    }
+  }
 }

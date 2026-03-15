@@ -67,6 +67,7 @@ import java.sql.SQLData;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLXML;
+import java.sql.Struct;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -795,7 +796,21 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
         }
         break;
       case Types.STRUCT:
-        if (in instanceof SQLData) {
+        if (in instanceof PgStruct) {
+          setStruct(parameterIndex, (PgStruct) in);
+        } else if (in instanceof Struct) {
+          try {
+            Struct struct = (Struct) in;
+            bindString(parameterIndex,
+                PostgresStructConverter.objectArrayToPostgresStruct(struct.getAttributes()),
+                Oid.UNSPECIFIED);
+          } catch (SQLException e) {
+            throw new PSQLException(
+                GT.tr("Cannot cast an instance of {0} to type {1}",
+                    in.getClass().getName(), "Types.STRUCT"),
+                PSQLState.INVALID_PARAMETER_TYPE, e);
+          }
+        } else if (in instanceof SQLData) {
           bindString(parameterIndex, toPostgresString(in), Oid.UNSPECIFIED);
         } else {
           bindString(parameterIndex, in.toString(), Oid.UNSPECIFIED);

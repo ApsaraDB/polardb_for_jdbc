@@ -302,6 +302,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       return value;
     }
 
+    // POLAR: When the DB returns Types.OTHER (e.g. cross-package TABLE OF RECORD,
+    // composite types, or other unrecognized types), pass the value through as-is.
+    // The caller's getXXX() method will handle the actual conversion.
+    if (columnType == Types.OTHER || registeredType == Types.OTHER) {
+      return value;
+    }
+
     // ---- string family on either side ----
     if (isStringType(registeredType)) {
       // Any DB type → registered as string: convert to string representation
