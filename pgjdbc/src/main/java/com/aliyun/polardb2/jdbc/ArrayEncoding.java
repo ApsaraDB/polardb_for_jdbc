@@ -1091,11 +1091,11 @@ final class ArrayEncoding {
               if (j > 0) {
                 recordSb.append(',');
               }
-              if (attributes[j] == null) {
-                recordSb.append('N').append('U').append('L').append('L');
-              } else {
+              if (attributes[j] != null) {
                 recordSb.append(attributes[j].toString());
               }
+              // null → leave empty (no output between commas) for correct
+              // PostgreSQL composite type literal syntax
             }
             recordSb.append(')');
             // Escape the entire record as an array element

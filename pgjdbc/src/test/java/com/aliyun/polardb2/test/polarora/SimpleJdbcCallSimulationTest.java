@@ -116,6 +116,10 @@ public class SimpleJdbcCallSimulationTest {
     } catch (Exception ignored) {
     }
     try {
+      stmt.execute("DROP PACKAGE IF EXISTS NB_QUOTA_POL_PKG");
+    } catch (Exception ignored) {
+    }
+    try {
       stmt.execute("DROP TYPE IF EXISTS NB_RESULT_ARRAY");
     } catch (Exception ignored) {
     }
@@ -133,6 +137,18 @@ public class SimpleJdbcCallSimulationTest {
     }
     try {
       stmt.execute("DROP TYPE IF EXISTS NB_POLICY_TYPE");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS tbl_quota_pol_info");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS \"cis\".\"quota_pol_info\"");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP SCHEMA IF EXISTS cis CASCADE");
     } catch (Exception ignored) {
     }
 
@@ -296,6 +312,54 @@ public class SimpleJdbcCallSimulationTest {
         + "  END;\n"
         + "END NB_ARRAY_OUT_PKG;");
 
+    // ========== Schema + 类型: cis.quota_pol_info / tbl_quota_pol_info ==========
+    stmt.execute("CREATE SCHEMA IF NOT EXISTS cis");
+
+    stmt.execute(
+        "CREATE OR REPLACE TYPE \"cis\".\"quota_pol_info\" AS (\n"
+        + "  action_code           CHARACTER VARYING(10),\n"
+        + "  apply_dt              DATE,\n"
+        + "  is_free_look          CHARACTER VARYING(1),\n"
+        + "  bill_mthd             CHARACTER VARYING(1),\n"
+        + "  pmt_mode              CHARACTER VARYING(5),\n"
+        + "  new_plan_prem         NUMERIC(11,2),\n"
+        + "  francise_num          CHARACTER VARYING(4),\n"
+        + "  new_autopay_topup_prem NUMERIC(11,2),\n"
+        + "  ro_amt                NUMERIC(13,2),\n"
+        + "  ro_pct                NUMERIC(6,4),\n"
+        + "  tb_amt                NUMERIC(13,2),\n"
+        + "  realize_typ           CHARACTER VARYING(1)\n"
+        + ")");
+
+    stmt.execute("CREATE OR REPLACE TYPE tbl_quota_pol_info AS TABLE OF \"cis\".\"quota_pol_info\"");
+
+    // ========== 包6: tbl_quota_pol_info 作为 IN 参数 ==========
+    stmt.execute(
+        "CREATE OR REPLACE PACKAGE NB_QUOTA_POL_PKG AS\n"
+        + "  PROCEDURE PROCESS_QUOTA_POL(\n"
+        + "    p_quota_list IN  tbl_quota_pol_info,\n"
+        + "    p_count      OUT NUMBER,\n"
+        + "    p_status     OUT VARCHAR2\n"
+        + "  );\n"
+        + "END NB_QUOTA_POL_PKG;");
+
+    stmt.execute(
+        "CREATE OR REPLACE PACKAGE BODY NB_QUOTA_POL_PKG AS\n"
+        + "  PROCEDURE PROCESS_QUOTA_POL(\n"
+        + "    p_quota_list IN  tbl_quota_pol_info,\n"
+        + "    p_count      OUT NUMBER,\n"
+        + "    p_status     OUT VARCHAR2\n"
+        + "  ) IS\n"
+        + "  BEGIN\n"
+        + "    p_count := p_quota_list.COUNT;\n"
+        + "    IF p_count > 0 THEN\n"
+        + "      p_status := 'OK-' || p_quota_list(1).action_code;\n"
+        + "    ELSE\n"
+        + "      p_status := 'EMPTY';\n"
+        + "    END IF;\n"
+        + "  END;\n"
+        + "END NB_QUOTA_POL_PKG;");
+
     stmt.close();
   }
 
@@ -305,6 +369,10 @@ public class SimpleJdbcCallSimulationTest {
       return;
     }
     Statement stmt = conn.createStatement();
+    try {
+      stmt.execute("DROP PACKAGE IF EXISTS NB_QUOTA_POL_PKG");
+    } catch (Exception ignored) {
+    }
     try {
       stmt.execute("DROP PACKAGE IF EXISTS NB_ARRAY_OUT_PKG");
     } catch (Exception ignored) {
@@ -323,6 +391,18 @@ public class SimpleJdbcCallSimulationTest {
     }
     try {
       stmt.execute("DROP PACKAGE IF EXISTS NB_POLICY_PKG");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS tbl_quota_pol_info");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS \"cis\".\"quota_pol_info\"");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP SCHEMA IF EXISTS cis CASCADE");
     } catch (Exception ignored) {
     }
     try {
@@ -544,6 +624,77 @@ public class SimpleJdbcCallSimulationTest {
     assertEquals("first rider name", "Critical Illness", String.valueOf(riderList.get(0)[1]));
     assertEquals("second rider code", "R002", String.valueOf(riderList.get(1)[0]));
     assertEquals("third rider code", "R003", String.valueOf(riderList.get(2)[0]));
+
+    cs.close();
+  }
+
+  // ================================================================
+  // 测试6: tbl_quota_pol_info (TABLE OF cis.quota_pol_info) 作为 IN 参数
+  //        通过 setArray 接口调用，apply_dt 字段传入空值
+  // ================================================================
+  @Test
+  public void testTblQuotaPolInfoWithNullApplyDt() throws Exception {
+    System.out.println("=== 测试6: tbl_quota_pol_info setArray — apply_dt 为 null ===");
+
+    // 构造两条 quota_pol_info 记录，apply_dt 均为 null
+    // 字段顺序: action_code, apply_dt, is_free_look, bill_mthd, pmt_mode,
+    //           new_plan_prem, francise_num, new_autopay_topup_prem,
+    //           ro_amt, ro_pct, tb_amt, realize_typ
+    Object[] row1 = new Object[]{
+        "NEW",                                    // action_code
+        null,                                     // apply_dt — 空值
+        "N",                                      // is_free_look
+        "M",                                      // bill_mthd
+        "AUTO",                                   // pmt_mode
+        new java.math.BigDecimal("1200.50"),      // new_plan_prem
+        "F001",                                   // francise_num
+        new java.math.BigDecimal("0.00"),         // new_autopay_topup_prem
+        new java.math.BigDecimal("500.00"),       // ro_amt
+        new java.math.BigDecimal("0.0500"),       // ro_pct
+        new java.math.BigDecimal("100.00"),       // tb_amt
+        "A"                                       // realize_typ
+    };
+
+    Object[] row2 = new Object[]{
+        "CHG",                                    // action_code
+        null,                                     // apply_dt — 空值
+        "Y",                                      // is_free_look
+        "A",                                      // bill_mthd
+        "CASH",                                   // pmt_mode
+        new java.math.BigDecimal("800.00"),       // new_plan_prem
+        "F002",                                   // francise_num
+        new java.math.BigDecimal("50.00"),        // new_autopay_topup_prem
+        new java.math.BigDecimal("0.00"),         // ro_amt
+        new java.math.BigDecimal("0.0000"),       // ro_pct
+        new java.math.BigDecimal("200.00"),       // tb_amt
+        "B"                                       // realize_typ
+    };
+
+    Struct struct1 = conn.createStruct("cis.quota_pol_info", row1);
+    Struct struct2 = conn.createStruct("cis.quota_pol_info", row2);
+
+    Struct[] structArr = new Struct[]{struct1, struct2};
+    Array quotaArray = pgConn.createArrayOf("tbl_quota_pol_info", structArr);
+
+    CallableStatement cs = conn.prepareCall(
+        "{ call NB_QUOTA_POL_PKG.PROCESS_QUOTA_POL(?, ?, ?) }");
+
+    cs.setArray(1, quotaArray);
+    cs.registerOutParameter(2, Types.NUMERIC);
+    cs.registerOutParameter(3, Types.VARCHAR);
+
+    cs.execute();
+
+    int count = cs.getInt(2);
+    String status = cs.getString(3);
+
+    System.out.println("  p_count  = " + count);
+    System.out.println("  p_status = " + status);
+
+    assertEquals("should have 2 records", 2, count);
+    assertNotNull("status should not be null", status);
+    assertTrue("status should start with OK-", status.startsWith("OK-"));
+    assertTrue("status should contain first action_code", status.contains("NEW"));
 
     cs.close();
   }

@@ -57,6 +57,14 @@ public class PgArray implements java.sql.Array {
   private final int oid;
 
   /**
+   * Returns the OID of this array type.
+   * Package-private for use by PgPreparedStatement.setArray.
+   */
+  int getOID() {
+    return oid;
+  }
+
+  /**
    * Field value as String.
    */
   protected @Nullable String fieldString;
