@@ -2768,6 +2768,20 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
     if (isBinary(columnIndex)) {
       int sqlType = getSQLType(columnIndex);
       if (sqlType != Types.NUMERIC && sqlType != Types.DECIMAL) {
+        /* POLAR DIFF: When bigintAsNumeric=true, internalGetObject(BIGINT) calls getNumeric(),
+         * which in binary mode calls internalGetObject(BIGINT) again, causing infinite recursion
+         * and StackOverflowError. Fix: for integer types read raw bytes directly to avoid the
+         * cycle. This mirrors what getLong()/getInt() already do for binary fields.
+         */
+        if (sqlType == Types.BIGINT) {
+          BigDecimal res = BigDecimal.valueOf(getLong(columnIndex));
+          return scaleBigDecimal(res, scale);
+        }
+        if (sqlType == Types.INTEGER || sqlType == Types.SMALLINT || sqlType == Types.TINYINT) {
+          BigDecimal res = BigDecimal.valueOf(getInt(columnIndex));
+          return scaleBigDecimal(res, scale);
+        }
+        /* POLAR DIFF end */
         Object obj = internalGetObject(columnIndex, fields[columnIndex - 1]);
         if (obj == null) {
           return null;
