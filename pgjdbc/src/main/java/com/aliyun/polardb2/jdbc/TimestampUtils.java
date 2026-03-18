@@ -39,6 +39,7 @@ import java.time.temporal.ChronoField;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.SimpleTimeZone;
 import java.util.TimeZone;
@@ -192,7 +193,91 @@ public class TimestampUtils {
   /**
    * Load date/time information into the provided calendar returning the fractional seconds.
    */
+  /* POLAR DIFF: Support Oracle NLS date format (DD-Mon-YYYY / DD-Mon-YY).
+   * When users pass date strings like "06-Mar-2026" (common in Oracle applications)
+   * via setObject(idx, "06-Mar-2026", Types.DATE/TIMESTAMP), the standard
+   * parseBackendTimestamp only handles ISO yyyy-mm-dd and would throw:
+   *   Bad value for type timestamp/date/time: 06-Mar-2026
+   * We normalize such strings to ISO format before parsing.
+   */
+  private static final HashMap<String, String> ORACLE_MONTH_ABBR;
+
+  static {
+    ORACLE_MONTH_ABBR = new HashMap<String, String>();
+    ORACLE_MONTH_ABBR.put("jan", "01");
+    ORACLE_MONTH_ABBR.put("feb", "02");
+    ORACLE_MONTH_ABBR.put("mar", "03");
+    ORACLE_MONTH_ABBR.put("apr", "04");
+    ORACLE_MONTH_ABBR.put("may", "05");
+    ORACLE_MONTH_ABBR.put("jun", "06");
+    ORACLE_MONTH_ABBR.put("jul", "07");
+    ORACLE_MONTH_ABBR.put("aug", "08");
+    ORACLE_MONTH_ABBR.put("sep", "09");
+    ORACLE_MONTH_ABBR.put("oct", "10");
+    ORACLE_MONTH_ABBR.put("nov", "11");
+    ORACLE_MONTH_ABBR.put("dec", "12");
+  }
+
+  /**
+   * Converts Oracle NLS date strings (DD-Mon-YYYY or DD-Mon-YY) to ISO format (YYYY-MM-DD[...]).
+   * Examples: "06-Mar-2026" -> "2026-03-06", "06-MAR-26" -> "2026-03-06".
+   * Returns the original string unchanged if it does not match the Oracle format.
+   */
+  private static String normalizeOracleDateFormat(String str) {
+    int len = str.length();
+    if (len < 9) {
+      return str;
+    }
+    int dash1 = str.indexOf('-');
+    // day part: 1 or 2 digits
+    if (dash1 < 1 || dash1 > 2) {
+      return str;
+    }
+    // month abbreviation: exactly 3 chars between dash1 and dash2
+    int dash2 = str.indexOf('-', dash1 + 1);
+    if (dash2 != dash1 + 4) {
+      return str;
+    }
+    // Validate day is all digits
+    for (int i = 0; i < dash1; i++) {
+      if (!Character.isDigit(str.charAt(i))) {
+        return str;
+      }
+    }
+    // Validate month is 3 letters
+    String monStr = str.substring(dash1 + 1, dash2);
+    for (int i = 0; i < 3; i++) {
+      if (!Character.isLetter(monStr.charAt(i))) {
+        return str;
+      }
+    }
+    String monthNum = ORACLE_MONTH_ABBR.get(monStr.toLowerCase(Locale.ROOT));
+    if (monthNum == null) {
+      return str;
+    }
+    // Year part (at least 2 digits), followed by optional time/timezone
+    String remainder = str.substring(dash2 + 1);
+    int yearEnd = 0;
+    while (yearEnd < remainder.length() && Character.isDigit(remainder.charAt(yearEnd))) {
+      yearEnd++;
+    }
+    if (yearEnd < 2) {
+      return str;
+    }
+    String yearStr = remainder.substring(0, yearEnd);
+    if (yearStr.length() == 2) {
+      yearStr = "20" + yearStr;
+    }
+    String suffix = remainder.substring(yearEnd);
+    String day = dash1 == 1 ? "0" + str.substring(0, 1) : str.substring(0, 2);
+    return yearStr + "-" + monthNum + "-" + day + suffix;
+  }
+  /* POLAR DIFF end */
+
   private ParsedTimestamp parseBackendTimestamp(String str) throws SQLException {
+    /* POLAR DIFF: normalize Oracle NLS date format (DD-Mon-YYYY) to ISO before parsing */
+    str = normalizeOracleDateFormat(str);
+    /* POLAR DIFF end */
     char[] s = str.toCharArray();
     int slen = s.length;
 
