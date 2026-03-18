@@ -312,6 +312,61 @@ public class SimpleJdbcCallSimulationTest {
         + "  END;\n"
         + "END NB_ARRAY_OUT_PKG;");
 
+    // ========== 复现场景: claim_body 包 — TABLE OF 记录类型作为 IN 参数 ==========
+    // 模拟 claim_body.call_valid_clm_dtls(text, text, text, tab_clm_treatment_dtls, text)
+    // 问题: 当用 begin...end 块调用时，tab_clm_treatment_dtls 被推断为 text
+    try {
+      stmt.execute("DROP PACKAGE IF EXISTS claim_body");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS tab_clm_treatment_dtls");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS rec_clm_treatment_dtls");
+    } catch (Exception ignored) {
+    }
+
+    stmt.execute(
+        "CREATE OR REPLACE TYPE rec_clm_treatment_dtls AS (\n"
+        + "  treatment_code    VARCHAR2(20),\n"
+        + "  treatment_name    VARCHAR2(100),\n"
+        + "  treatment_date    DATE,\n"
+        + "  amount            NUMBER(15,2)\n"
+        + ")");
+
+    stmt.execute("CREATE OR REPLACE TYPE tab_clm_treatment_dtls AS TABLE OF rec_clm_treatment_dtls");
+
+    stmt.execute(
+        "CREATE OR REPLACE PACKAGE claim_body AS\n"
+        + "  PROCEDURE call_valid_clm_dtls(\n"
+        + "    p_clm_no        IN  VARCHAR2,\n"
+        + "    p_pol_no        IN  VARCHAR2,\n"
+        + "    p_cert_no       IN  VARCHAR2,\n"
+        + "    p_treatment_tab IN  tab_clm_treatment_dtls,\n"
+        + "    p_result        OUT VARCHAR2\n"
+        + "  );\n"
+        + "END claim_body;");
+
+    stmt.execute(
+        "CREATE OR REPLACE PACKAGE BODY claim_body AS\n"
+        + "  PROCEDURE call_valid_clm_dtls(\n"
+        + "    p_clm_no        IN  VARCHAR2,\n"
+        + "    p_pol_no        IN  VARCHAR2,\n"
+        + "    p_cert_no       IN  VARCHAR2,\n"
+        + "    p_treatment_tab IN  tab_clm_treatment_dtls,\n"
+        + "    p_result        OUT VARCHAR2\n"
+        + "  ) IS\n"
+        + "  BEGIN\n"
+        + "    IF p_treatment_tab IS NULL OR p_treatment_tab.COUNT = 0 THEN\n"
+        + "      p_result := 'OK-EMPTY';\n"
+        + "    ELSE\n"
+        + "      p_result := 'OK-' || p_clm_no || '-' || p_treatment_tab.COUNT;\n"
+        + "    END IF;\n"
+        + "  END;\n"
+        + "END claim_body;");
+
     // ========== Schema + 类型: cis.quota_pol_info / tbl_quota_pol_info ==========
     stmt.execute("CREATE SCHEMA IF NOT EXISTS cis");
 
@@ -369,6 +424,18 @@ public class SimpleJdbcCallSimulationTest {
       return;
     }
     Statement stmt = conn.createStatement();
+    try {
+      stmt.execute("DROP PACKAGE IF EXISTS claim_body");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS tab_clm_treatment_dtls");
+    } catch (Exception ignored) {
+    }
+    try {
+      stmt.execute("DROP TYPE IF EXISTS rec_clm_treatment_dtls");
+    } catch (Exception ignored) {
+    }
     try {
       stmt.execute("DROP PACKAGE IF EXISTS NB_QUOTA_POL_PKG");
     } catch (Exception ignored) {
@@ -695,6 +762,110 @@ public class SimpleJdbcCallSimulationTest {
     assertNotNull("status should not be null", status);
     assertTrue("status should start with OK-", status.startsWith("OK-"));
     assertTrue("status should contain first action_code", status.contains("NEW"));
+
+    cs.close();
+  }
+
+  // ================================================================
+  // 测诗7: TABLE OF 结构体类型作为 IN 参数，通过 begin...end 块调用
+  //
+  // 复现场景: 客户端调用 claim_body.call_valid_clm_dtls，
+  // 第4个参数 tab_clm_treatment_dtls (自定义集合类型) 被推断为 text，
+  // 导致存储过程不存在错误。
+  //
+  // 根本原因:
+  // setStruct()/setObject(idx, struct, Types.STRUCT) 使用 Oid.UNSPECIFIED 绑定参数，
+  // PostgreSQL 服务端将其推断为 text 而非实际的自定义类型。
+  // ================================================================
+  @Test
+  public void testTableOfStructAsInParamViaBeginEndBlock() throws Exception {
+    System.out.println("=== 测诗7: TABLE OF 结构体类型为 IN 参数 (begin...end 块) 复现 ===");
+
+    // 构造 tab_clm_treatment_dtls 集合数据，包含两条记录
+    Object[] row1 = new Object[]{
+        "T001",                                   // treatment_code
+        "Hospitalization",                        // treatment_name
+        null,                                     // treatment_date
+        new java.math.BigDecimal("3000.00")       // amount
+    };
+    Object[] row2 = new Object[]{
+        "T002",                                   // treatment_code
+        "Surgery",                                // treatment_name
+        null,                                     // treatment_date
+        new java.math.BigDecimal("15000.00")      // amount
+    };
+
+    // 创建每个元素的 Struct，类型名为 rec_clm_treatment_dtls
+    Struct struct1 = conn.createStruct("rec_clm_treatment_dtls", row1);
+    Struct struct2 = conn.createStruct("rec_clm_treatment_dtls", row2);
+
+    // 创建 TABLE OF 数组，类型名为 tab_clm_treatment_dtls
+    Array treatmentArray = pgConn.createArrayOf("tab_clm_treatment_dtls", new Struct[]{struct1, struct2});
+
+    // 模拟 Spring SimpleJdbcCall 通过 begin...end 块调用存储过程
+    // 这是导致错误的关键调用方式
+    CallableStatement cs = conn.prepareCall(
+        "begin claim_body.call_valid_clm_dtls(?, ?, ?, ?, ?); end;");
+
+    cs.setObject(1, "CLM001", Types.VARCHAR);      // p_clm_no
+    cs.setObject(2, "POL001", Types.VARCHAR);      // p_pol_no
+    cs.setObject(3, "CERT001", Types.VARCHAR);     // p_cert_no
+    // 问题就出在这里: treatmentArray 的类型信息被忽略，参数被推断为 text
+    cs.setObject(4, treatmentArray, Types.ARRAY);  // p_treatment_tab
+    cs.registerOutParameter(5, Types.VARCHAR);     // p_result (OUT)
+
+    // 预期这个调用应该成功，但实际会抛出错误:
+    // ERROR: procedure claim_body.call_valid_clm_dtls(text, text, text, text, text) does not exist
+    cs.execute();
+
+    String result = cs.getString(5);
+    System.out.println("  p_result = " + result);
+    assertNotNull("result should not be null", result);
+    assertTrue("result should contain CLM001", result.contains("CLM001"));
+    assertTrue("result should contain count 2", result.contains("2"));
+
+    cs.close();
+  }
+
+  // ================================================================
+  // 测诗8: 同上场景，但使用 setObject(idx, struct, Types.STRUCT)方式传入单个结构体
+  //
+  // 复现场景: 如果用户使用 ORACLE_STRUCT 类型 (Types.STRUCT = 2002) 传入自定义类型对象，
+  // 同样会因为 Oid.UNSPECIFIED 而被推断为 text。
+  // ================================================================
+  @Test
+  public void testStructAsInParamViaBeginEndBlock() throws Exception {
+    System.out.println("=== 测诗8: 单个 STRUCT 结构体为 IN 参数 (begin...end 块) 复现 ===");
+
+    // 尝试直接将单个结构体作为 IN 参数传入，使用 { call ... } 语法
+    // 这里我们测试用结构体直接调用包函数（NB_UNDERWRITING_PKG.SUBMIT_POLICY）
+    // 使用 begin...end 块语法，模拟客户端错误场景
+    Object[] policyAttr = new Object[]{
+        "POL999",
+        "Test Holder",
+        "2025-01-01",
+        new java.math.BigDecimal("5000.00")
+    };
+    Struct policyStruct = conn.createStruct("NB_POLICY_TYPE", policyAttr);
+
+    // 使用 begin...end 块语法调用，模拟客户端错误场景
+    CallableStatement cs = conn.prepareCall(
+        "begin NB_UNDERWRITING_PKG.SUBMIT_POLICY(?, ?); end;");
+
+    // 使用 Types.STRUCT 传入结构体
+    // 驱动会使用 Oid.UNSPECIFIED, 服务端将其推断为 text
+    cs.setObject(1, policyStruct, Types.STRUCT);
+    cs.registerOutParameter(2, Types.VARCHAR);
+
+    // 预期这个调用应该成功，但实际可能抛出:
+    // ERROR: procedure NB_UNDERWRITING_PKG.SUBMIT_POLICY(text, text) does not exist
+    cs.execute();
+
+    String result = cs.getString(2);
+    System.out.println("  p_result_code = " + result);
+    assertNotNull("result code should not be null", result);
+    assertTrue("result should start with OK-", result.startsWith("OK-"));
+    assertTrue("result should contain POL999", result.contains("POL999"));
 
     cs.close();
   }

@@ -801,9 +801,22 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
         } else if (in instanceof Struct) {
           try {
             Struct struct = (Struct) in;
+            /* POLAR DIFF: look up the custom type OID by name */
+            int structOid = Oid.UNSPECIFIED;
+            String structTypeName = struct.getSQLTypeName();
+            if (structTypeName != null && !structTypeName.isEmpty()) {
+              structOid = connection.getTypeInfo().getPGType(structTypeName.toLowerCase(java.util.Locale.ROOT));
+              if (structOid == Oid.UNSPECIFIED) {
+                structOid = connection.getTypeInfo().getPGType(structTypeName.toUpperCase(java.util.Locale.ROOT));
+              }
+              if (structOid == Oid.UNSPECIFIED) {
+                structOid = connection.getTypeInfo().getPGType(structTypeName);
+              }
+            }
+            /* POLAR DIFF end */
             bindString(parameterIndex,
                 PostgresStructConverter.objectArrayToPostgresStruct(struct.getAttributes()),
-                Oid.UNSPECIFIED);
+                structOid);
           } catch (SQLException e) {
             throw new PSQLException(
                 GT.tr("Cannot cast an instance of {0} to type {1}",
@@ -2034,7 +2047,22 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     if (x == null) {
       setNull(parameterIndex, Types.STRUCT);
     } else {
-      bindString(parameterIndex, PostgresStructConverter.objectArrayToPostgresStruct(x.getAttributes()), Oid.UNSPECIFIED);
+      /* POLAR DIFF: look up the custom type OID by name so the server resolves the correct
+       * overloaded procedure/function, instead of always using UNSPECIFIED which causes the
+       * server to infer the parameter as 'text' and fail with "procedure ... does not exist". */
+      int oid = Oid.UNSPECIFIED;
+      String typeName = x.getSQLTypeName();
+      if (typeName != null && !typeName.isEmpty()) {
+        oid = connection.getTypeInfo().getPGType(typeName.toLowerCase(java.util.Locale.ROOT));
+        if (oid == Oid.UNSPECIFIED) {
+          oid = connection.getTypeInfo().getPGType(typeName.toUpperCase(java.util.Locale.ROOT));
+        }
+        if (oid == Oid.UNSPECIFIED) {
+          oid = connection.getTypeInfo().getPGType(typeName);
+        }
+      }
+      /* POLAR DIFF end */
+      bindString(parameterIndex, PostgresStructConverter.objectArrayToPostgresStruct(x.getAttributes()), oid);
     }
   }
 }
