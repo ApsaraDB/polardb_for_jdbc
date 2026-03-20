@@ -1095,7 +1095,7 @@ final class ArrayEncoding {
                 recordSb.append(attributes[j].toString());
               }
               // null → leave empty (no output between commas) for correct
-              // PostgreSQL composite type literal syntax
+              // PostgreSQL composite type literal syntax: (val1,,val3) means val2 is NULL
             }
             recordSb.append(')');
             // Escape the entire record as an array element

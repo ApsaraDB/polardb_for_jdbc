@@ -43,7 +43,14 @@ public class PostgresStructConverter {
    */
   private static void appendPostgresValue(StringBuilder sb, Object value) {
     if (value == null) {
-      sb.append("NULL");
+      /* POLAR DIFF: PolarDB/PostgreSQL composite type literal syntax uses empty field
+       * (nothing between commas) to represent NULL, not the literal word "NULL".
+       * Outputting "NULL" causes: ERROR: invalid input syntax for type date: "NULL"
+       * when the field type is DATE/TIME/TIMESTAMP and the value is null.
+       * See: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-IO-SYNTAX
+       */
+      // Leave empty: caller writes only the comma separator
+      // POLAR DIFF end
       return;
     }
 
