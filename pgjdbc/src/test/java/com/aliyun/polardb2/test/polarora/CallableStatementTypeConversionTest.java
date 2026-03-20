@@ -18,8 +18,10 @@ import org.junit.Test;
 import java.math.BigDecimal;
 import java.sql.CallableStatement;
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.Properties;
 
@@ -68,6 +70,22 @@ public class CallableStatementTypeConversionTest {
         "CREATE OR REPLACE FUNCTION test_real_out(a real, b out real) RETURN real IS "
             + "BEGIN b := a * 3.0; RETURN b; END;");
 
+    // Function that returns a DATE out parameter (simulates CIS.GET_UNCONFIRMED_LINKAGE2 scenario)
+    stmt.execute(
+        "CREATE OR REPLACE FUNCTION test_date_out(a int, b out date) RETURN int IS "
+            + "BEGIN b := TO_DATE('2025-06-15', 'YYYY-MM-DD'); RETURN a; END;");
+
+    // Function that returns a TIMESTAMP out parameter
+    stmt.execute(
+        "CREATE OR REPLACE FUNCTION test_timestamp_out(a int, b out timestamp) RETURN int IS "
+            + "BEGIN b := TO_TIMESTAMP('2025-06-15 12:30:00', 'YYYY-MM-DD HH24:MI:SS'); RETURN a; END;");
+
+    // Function that returns DATE as VARCHAR (triggers ClassCastException: String -> Timestamp)
+    // This simulates the case where PolarDB returns the date column type as VARCHAR
+    stmt.execute(
+        "CREATE OR REPLACE FUNCTION test_date_as_varchar_out(a int, b out varchar) RETURN int IS "
+            + "BEGIN b := TO_CHAR(TO_DATE('2025-06-15', 'YYYY-MM-DD'), 'YYYY-MM-DD'); RETURN a; END;");
+
     stmt.close();
   }
 
@@ -81,6 +99,9 @@ public class CallableStatementTypeConversionTest {
     stmt.execute("DROP FUNCTION IF EXISTS test_bool_out(boolean)");
     stmt.execute("DROP FUNCTION IF EXISTS test_double_out(double precision)");
     stmt.execute("DROP FUNCTION IF EXISTS test_real_out(real)");
+    stmt.execute("DROP FUNCTION IF EXISTS test_date_out(int)");
+    stmt.execute("DROP FUNCTION IF EXISTS test_timestamp_out(int)");
+    stmt.execute("DROP FUNCTION IF EXISTS test_date_as_varchar_out(int)");
     stmt.close();
     conn.close();
   }
@@ -616,5 +637,73 @@ public class CallableStatementTypeConversionTest {
     stmt = conn.createStatement();
     stmt.execute("DROP PROCEDURE IF EXISTS test_swallow3");
     stmt.close();
+  }
+
+  // ==================== Date/Timestamp OUT parameter Tests ====================
+
+  /**
+   * 复现: cs.getDate(n) 对 DATE 类型 OUT 参数抛出
+   * ClassCastException: Cannot cast 'java.lang.String' to 'java.sql.Timestamp'
+   *
+   * <p>根因: 当数据库列类型为 VARCHAR（PolarDB 某些存储过程返回日期为 VARCHAR），
+   * 但用户注册的是 TIMESTAMP 时：
+   *   convertOutParamValue(String, VARCHAR, TIMESTAMP)
+   *     -&gt; isStringType(VARCHAR)=false, isStringType(VARCHAR 为 columnType) ? 不对
+   *     -&gt; parseStringToType(str, TIMESTAMP) -&gt; default -&gt; 返回原始 String
+   *   callResult[j] = String
+   *   getTimestamp(j) -&gt; (Timestamp) String -&gt; ClassCastException
+   *
+   * <p>同样， getDate() 在 mapDateToTimestamp=true 时内部调 getTimestamp()，也会触发。
+   */
+  @Test
+  public void testGetDateOutParamClassCastException() throws SQLException {
+    // DB returns VARCHAR, user registered TIMESTAMP -> String stored in callResult
+    // -> getTimestamp() does (Timestamp) String -> ClassCastException
+    CallableStatement cs = conn.prepareCall("{ ? = call test_date_as_varchar_out(?, ?) }");
+    cs.registerOutParameter(1, Types.INTEGER);
+    cs.setInt(2, 1);
+    cs.registerOutParameter(3, Types.TIMESTAMP);  // registered as TIMESTAMP but DB returns VARCHAR
+    cs.execute();
+
+    // 预期触发: ClassCastException: Cannot cast 'java.lang.String' to 'java.sql.Timestamp'
+    // 因为 callResult[2] = "2025-06-15"(String), getTimestamp() 尝试 (Timestamp) "2025-06-15"
+    Timestamp ts = cs.getTimestamp(3);
+    assertTrue("timestamp should not be null", ts != null);
+    assertEquals("2025-06-15 00:00:00.0", ts.toString());
+    cs.close();
+  }
+
+  /**
+   * 正常场景: DATE OUT 参数类型匹配，应返回正确的 Date
+   */
+  @Test
+  public void testGetDateOutParamNormal() throws SQLException {
+    CallableStatement cs = conn.prepareCall("{ ? = call test_date_out(?, ?) }");
+    cs.registerOutParameter(1, Types.INTEGER);
+    cs.setInt(2, 1);
+    cs.registerOutParameter(3, Types.DATE);
+    cs.execute();
+
+    Date date = cs.getDate(3);
+    assertTrue("date should not be null", date != null);
+    assertEquals("2025-06-15", date.toString());
+    cs.close();
+  }
+
+  /**
+   * 正常场景: TIMESTAMP OUT 参数类型匹配，应返回正确的 Timestamp
+   */
+  @Test
+  public void testGetTimestampOutParamNormal() throws SQLException {
+    CallableStatement cs = conn.prepareCall("{ ? = call test_timestamp_out(?, ?) }");
+    cs.registerOutParameter(1, Types.INTEGER);
+    cs.setInt(2, 1);
+    cs.registerOutParameter(3, Types.TIMESTAMP);
+    cs.execute();
+
+    Timestamp ts = cs.getTimestamp(3);
+    assertTrue("timestamp should not be null", ts != null);
+    assertEquals("2025-06-15 12:30:00.0", ts.toString());
+    cs.close();
   }
 }

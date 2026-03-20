@@ -430,13 +430,32 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
         case Types.BIT:
         case Types.BOOLEAN:
           return Boolean.parseBoolean(strVal);
+        /* POLAR DIFF: Parse date/time strings instead of returning raw String.
+         * When the DB column type is VARCHAR but the user registered DATE/TIME/TIMESTAMP,
+         * returning the raw String causes ClassCastException in getDate()/getTimestamp().
+         * Parse to the proper java.sql type here so the accessor can safely cast it.
+         */
+        case Types.DATE:
+          return java.sql.Date.valueOf(strVal.trim());
+        case Types.TIME:
+          return java.sql.Time.valueOf(strVal.trim());
+        case Types.TIMESTAMP:
+          // Timestamp.valueOf() requires "yyyy-MM-dd HH:mm:ss[.nnnnnnnnn]".
+          // A date-only string ("yyyy-MM-dd") is valid: interpret as midnight.
+          String ts = strVal.trim();
+          if (ts.length() == 10 && ts.charAt(4) == '-') {
+            ts = ts + " 00:00:00";
+          }
+          return java.sql.Timestamp.valueOf(ts);
+        /* POLAR DIFF end */
         default:
-          // DATE, TIME, TIMESTAMP, and other types: keep as string,
-          // the actual getXXX() accessor will handle further conversion.
           return strVal;
       }
     } catch (NumberFormatException e) {
       // If parsing fails, return the original string value
+      return strVal;
+    } catch (IllegalArgumentException e) {
+      // If date/time parsing fails, return the original string value
       return strVal;
     }
   }
@@ -765,7 +784,15 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     }
     /* POLAR DIFF end */
     Object result = checkIndex(parameterIndex, Types.DATE, "Date");
-    return (java.sql.@Nullable Date) result;
+    if (result == null) {
+      return null;
+    }
+    /* POLAR DIFF: guard against String stored when DB column type was VARCHAR */
+    if (result instanceof String) {
+      return getTimestampUtils().toDate(null, (String) result);
+    }
+    /* POLAR DIFF end */
+    return (java.sql.Date) result;
   }
 
   public java.sql.@Nullable Time getTime(@Positive int parameterIndex) throws SQLException {
@@ -775,7 +802,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
   public java.sql.@Nullable Timestamp getTimestamp(@Positive int parameterIndex) throws SQLException {
     Object result = checkIndex(parameterIndex, Types.TIMESTAMP, "Timestamp");
-    return (java.sql.@Nullable Timestamp) result;
+    if (result == null) {
+      return null;
+    }
+    /* POLAR DIFF: When callResult stores a String (e.g. DB column type was VARCHAR but user
+     * registered TIMESTAMP), a direct cast throws ClassCastException. Parse via TimestampUtils.
+     */
+    if (result instanceof String) {
+      return getTimestampUtils().toTimestamp(null, (String) result);
+    }
+    /* POLAR DIFF end */
+    return (java.sql.Timestamp) result;
   }
 
   public @Nullable Object getObject(@Positive int parameterIndex) throws SQLException {
