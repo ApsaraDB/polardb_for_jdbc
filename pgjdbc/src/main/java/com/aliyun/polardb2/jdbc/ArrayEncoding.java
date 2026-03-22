@@ -10,6 +10,7 @@ import com.aliyun.polardb2.core.Encoding;
 import com.aliyun.polardb2.core.Oid;
 import com.aliyun.polardb2.util.ByteConverter;
 import com.aliyun.polardb2.util.GT;
+import com.aliyun.polardb2.util.PGobject;
 import com.aliyun.polardb2.util.PSQLException;
 import com.aliyun.polardb2.util.PSQLState;
 
@@ -1103,6 +1104,36 @@ final class ArrayEncoding {
           } catch (SQLException e) {
             throw new IllegalStateException("Failed to get Struct attributes", e);
           }
+        } else if (array[i] instanceof PGobject) {
+          /* POLAR DIFF: Handle PGobject elements that represent composite type records
+           * but whose values lack enclosing parentheses.
+           *
+           * Frameworks (e.g., Manulife's OracleArrayParameter) create PGobject
+           * elements with comma-separated field values like "HHF01790,HH,RB,HOSP"
+           * but without the record literal parentheses: "(HHF01790,HH,RB,HOSP)".
+           *
+           * PostgreSQL/PolarDB requires record literals in arrays to start with '('.
+           * Without this fix the server rejects the value with:
+           *   ERROR: malformed record literal: "HHF01790"
+           *   Detail: Missing left parenthesis.
+           *
+           * Heuristic: if the value does not start with '(' and contains at least
+           * one comma (indicating multiple fields), wrap it as a record literal.
+           * Values starting with '{' or '[' are excluded to avoid wrapping JSON,
+           * range, or array-typed PGobject values. */
+          String val = ((PGobject) array[i]).getValue();
+          if (val == null) {
+            sb.append('N').append('U').append('L').append('L');
+          } else if (val.length() > 0
+              && val.charAt(0) != '('
+              && val.charAt(0) != '{'
+              && val.charAt(0) != '['
+              && val.indexOf(',') >= 0) {
+            PgArray.escapeArrayElement(sb, "(" + val + ")");
+          } else {
+            PgArray.escapeArrayElement(sb, val);
+          }
+          /* POLAR DIFF end */
         } else if (array[i].getClass().isArray()) {
           if (array[i] instanceof byte[]) {
             throw new UnsupportedOperationException("byte[] nested inside Object[]");
