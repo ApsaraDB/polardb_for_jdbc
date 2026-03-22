@@ -795,7 +795,17 @@ public class PgConnection implements BaseConnection {
       } else {
         // If className is null, then the type is unknown.
         // so return a PGobject with the type set, and the value set
-        obj = new PGobject();
+        /* POLAR DIFF: For composite types (typtype='c', sqlType=STRUCT), create a
+         * PgCompositeObject which extends PGobject AND implements java.sql.Struct.
+         * This ensures that composite type values from any code path (getArray(),
+         * getResultSet(), getObject()) can be cast to both PGobject and Struct. */
+        int sqlType = typeCache.getSQLType(type);
+        if (sqlType == java.sql.Types.STRUCT) {
+          obj = new PgCompositeObject();
+        } else {
+          obj = new PGobject();
+        }
+        // POLAR DIFF end
         obj.setType(type);
         obj.setValue(value);
       }

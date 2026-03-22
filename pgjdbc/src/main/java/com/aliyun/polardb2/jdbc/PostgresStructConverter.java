@@ -12,6 +12,8 @@ import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class PostgresStructConverter {
@@ -173,5 +175,93 @@ public class PostgresStructConverter {
         sb.append("'").append(value.getValue().replace("'", "''")).append("'");
       }
     }
+  }
+
+  /**
+   * Parses a PostgreSQL composite type literal into an array of attribute values.
+   * This is the reverse of {@link #objectArrayToPostgresStruct(Object[])}.
+   *
+   * <p>Format: {@code (field1,field2,...)} where:
+   * <ul>
+   *   <li>Empty field (nothing between commas) represents NULL</li>
+   *   <li>Quoted field ({@code "value"}) is a string; inner double-quotes are escaped
+   *       as {@code ""}</li>
+   *   <li>Unquoted field is a raw value (number, date, etc.)</li>
+   * </ul>
+   *
+   * @param literal the composite type literal, e.g. {@code ("NFORPU",'2025-06-15',,1234.56)}
+   * @return array of attribute values (String or null for each field)
+   */
+  public static Object[] parsePostgresStruct(String literal) {
+    if (literal == null || literal.length() < 2) {
+      return new Object[0];
+    }
+    // Strip outer parentheses
+    String inner = literal.substring(1, literal.length() - 1);
+    if (inner.isEmpty()) {
+      return new Object[0];
+    }
+
+    List<Object> fields = new ArrayList<Object>();
+    int pos = 0;
+    // Track whether we just consumed a comma and expect another field
+    boolean expectField = true;
+
+    while (pos <= inner.length()) {
+      if (pos == inner.length()) {
+        // Reached end right after a comma → trailing empty (null) field
+        if (expectField) {
+          fields.add(null);
+        }
+        break;
+      }
+
+      char c = inner.charAt(pos);
+      if (c == '"') {
+        // ---- Quoted field ----
+        pos++; // skip opening quote
+        StringBuilder sb = new StringBuilder();
+        while (pos < inner.length()) {
+          if (inner.charAt(pos) == '"') {
+            if (pos + 1 < inner.length() && inner.charAt(pos + 1) == '"') {
+              sb.append('"'); // escaped double-quote
+              pos += 2;
+            } else {
+              pos++; // closing quote
+              break;
+            }
+          } else {
+            sb.append(inner.charAt(pos));
+            pos++;
+          }
+        }
+        fields.add(sb.toString());
+        expectField = false;
+        if (pos < inner.length() && inner.charAt(pos) == ',') {
+          pos++;
+          expectField = true;
+        }
+      } else if (c == ',') {
+        // ---- Empty field = NULL ----
+        fields.add(null);
+        pos++;
+        expectField = true;
+      } else {
+        // ---- Unquoted field ----
+        StringBuilder sb = new StringBuilder();
+        while (pos < inner.length() && inner.charAt(pos) != ',') {
+          sb.append(inner.charAt(pos));
+          pos++;
+        }
+        fields.add(sb.toString());
+        expectField = false;
+        if (pos < inner.length() && inner.charAt(pos) == ',') {
+          pos++;
+          expectField = true;
+        }
+      }
+    }
+
+    return fields.toArray(new Object[0]);
   }
 }

@@ -450,6 +450,48 @@ final class ArrayDecoding {
     }
   }
 
+  /**
+   * POLAR DIFF: Decoder for composite type (typtype='c', sqlType=STRUCT) array elements.
+   * Returns {@link PgCompositeObject} which extends PGobject AND implements java.sql.Struct,
+   * so user code can cast elements to either PGobject (backward compatible) or Struct.
+   */
+  private static final class CompositeStructArrayDecoder extends AbstractObjectArrayDecoder<Object[]> {
+
+    private final String typeName;
+
+    CompositeStructArrayDecoder(String baseTypeName) {
+      super(Object.class);
+      this.typeName = baseTypeName;
+    }
+
+    @Override
+    Object parseValue(int length, ByteBuffer bytes, BaseConnection connection) throws SQLException {
+      // For binary, delegate to connection and wrap if needed
+      final byte[] copy = new byte[length];
+      bytes.get(copy);
+      Object result = connection.getObject(typeName, null, copy);
+      if (result instanceof PgCompositeObject) {
+        return result;
+      }
+      // Wrap plain PGobject as PgCompositeObject for Struct compatibility
+      PgCompositeObject comp = new PgCompositeObject();
+      comp.setType(typeName);
+      if (result instanceof com.aliyun.polardb2.util.PGobject) {
+        comp.setValue(((com.aliyun.polardb2.util.PGobject) result).getValue());
+      }
+      return comp;
+    }
+
+    @Override
+    Object parseValue(String stringVal, BaseConnection connection) throws SQLException {
+      PgCompositeObject comp = new PgCompositeObject();
+      comp.setType(typeName);
+      comp.setValue(stringVal);
+      return comp;
+    }
+  }
+  // POLAR DIFF end
+
   @SuppressWarnings("unchecked")
   private static <A extends @NonNull Object> ArrayDecoder<A> getDecoder(int oid, BaseConnection connection) throws SQLException {
     final Integer key = oid;
@@ -475,6 +517,15 @@ final class ArrayDecoding {
     if (type == Types.CHAR || type == Types.VARCHAR) {
       return (ArrayDecoder<A>) STRING_ONLY_DECODER;
     }
+    /* POLAR DIFF: composite types (typtype='c') should be decoded as PgCompositeObject
+     * which extends PGobject AND implements java.sql.Struct, so user code can cast
+     * array elements to either PGobject (backward compatible) or Struct (JDBC standard).
+     * Without this, TABLE OF composite_type OUT parameters return PGobject elements
+     * that cannot be cast to Struct, causing ClassCastException. */
+    if (type == Types.STRUCT) {
+      return (ArrayDecoder<A>) new CompositeStructArrayDecoder(typeName);
+    }
+    // POLAR DIFF end
     return (ArrayDecoder<A>) new MappedTypeObjectArrayDecoder(typeName);
   }
 
@@ -589,6 +640,18 @@ final class ArrayDecoding {
       return arrayList;
     }
 
+    /* POLAR: PolarDB TABLE OF types use a non-standard text format:
+     *   index => "value", index => "value", ...
+     * e.g.  - => "(12345,POL001)",2 => "(12346,POL002)"
+     * Detect this format and delegate to a dedicated parser. */
+    if (!fieldString.isEmpty()
+        && fieldString.charAt(0) != '{'
+        && fieldString.charAt(0) != '['
+        && fieldString.indexOf("=>") >= 0) {
+      return buildTableOfArrayList(fieldString, delim);
+    }
+    // POLAR end
+
     final char[] chars = fieldString.toCharArray();
     StringBuilder buffer = null;
     boolean insideString = false;
@@ -701,6 +764,90 @@ final class ArrayDecoding {
 
     return arrayList;
   }
+
+  /**
+   * POLAR: Parses PolarDB TABLE OF literal format into a {@link PgArrayList}.
+   *
+   * <p>TABLE OF types (with INDEX BY BINARY_INTEGER) whose element type is a
+   * package-internal RECORD use a non-standard text representation:
+   * <pre>
+   *   index =&gt; "value", index =&gt; "value", ...
+   * </pre>
+   * where {@code index} is a number or {@code -}, and values are optionally
+   * quoted with {@code "} (with {@code \"} for literal quotes inside).
+   *
+   * @param fieldString The TABLE OF array value to parse.
+   * @param delim       The delimiter character (typically comma).
+   * @return A {@link PgArrayList} containing the parsed element values.
+   */
+  private static PgArrayList buildTableOfArrayList(String fieldString, char delim) {
+    final PgArrayList arrayList = new PgArrayList();
+    final char[] chars = fieldString.toCharArray();
+    final int len = chars.length;
+    int i = 0;
+
+    while (i < len) {
+      // --- skip to the '=>' arrow ---
+      int arrowIdx = fieldString.indexOf("=>", i);
+      if (arrowIdx < 0) {
+        break; // no more elements
+      }
+      i = arrowIdx + 2; // skip past '=>'
+
+      // skip whitespace after '=>'
+      while (i < len && Character.isWhitespace(chars[i])) {
+        i++;
+      }
+      if (i >= len) {
+        break;
+      }
+
+      // --- parse the value ---
+      StringBuilder value = new StringBuilder();
+      boolean insideString = false;
+      boolean wasInsideString = false;
+
+      while (i < len) {
+        if (chars[i] == '\\' && i + 1 < len) {
+          // escape: skip backslash, append next char literally
+          i++;
+          value.append(chars[i]);
+          i++;
+          continue;
+        }
+
+        if (chars[i] == '"') {
+          insideString = !insideString;
+          wasInsideString = true;
+          i++;
+          continue;
+        }
+
+        // element separator (outside quotes)
+        if (!insideString && chars[i] == delim) {
+          i++; // skip delimiter
+          break;
+        }
+
+        // skip whitespace outside quotes
+        if (!insideString && Character.isWhitespace(chars[i])) {
+          i++;
+          continue;
+        }
+
+        value.append(chars[i]);
+        i++;
+      }
+
+      String v = value.toString();
+      if (!v.isEmpty() || wasInsideString) {
+        arrayList.add(!wasInsideString && "NULL".equals(v) ? null : v);
+      }
+    }
+
+    return arrayList;
+  }
+  // POLAR end
 
   /**
    * Reads {@code String} representation of array into object model.

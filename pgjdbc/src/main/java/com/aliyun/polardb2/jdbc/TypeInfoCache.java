@@ -73,6 +73,7 @@ public class TypeInfoCache implements TypeInfo {
   private @Nullable PreparedStatement getOidStatementComplexArray;
   private @Nullable PreparedStatement getNameStatement;
   private @Nullable PreparedStatement getArrayElementOidStatement;
+  private @Nullable PreparedStatement getArrayElementByTyparrayStatement;
   private @Nullable PreparedStatement getArrayDelimiterStatement;
   private @Nullable PreparedStatement getTypeInfoStatement;
   private @Nullable PreparedStatement getAllTypeInfoStatement;
@@ -259,6 +260,12 @@ public class TypeInfoCache implements TypeInfo {
     boolean isArray = rs.getBoolean("is_array");
     String typtype = rs.getString("typtype");
     if (isArray) {
+      type = Types.ARRAY;
+    } else if ("a".equals(typtype)) {
+      /* POLAR: PolarDB TABLE OF types have typtype='a' (array) but may not
+       * use pg_catalog.array_in as their typinput function. Recognise them
+       * as ARRAY so that PgResultSet.internalGetObject returns a PgArray
+       * instead of a plain PGobject. */
       type = Types.ARRAY;
     } else if ("c".equals(typtype)) {
       type = Types.STRUCT;
@@ -694,7 +701,20 @@ public class TypeInfoCache implements TypeInfo {
 
       ResultSet rs = castNonNull(getArrayElementOidStatement.getResultSet());
       if (!rs.next()) {
-        throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
+        rs.close();
+        /* POLAR: The standard typelem JOIN returned no rows. This happens for
+         * PolarDB TABLE OF types whose typelem=0. Try the reverse lookup:
+         * find the element type whose typarray column points to this OID. */
+        PreparedStatement fallbackStmt = prepareGetArrayElementByTyparrayStatement();
+        fallbackStmt.setInt(1, oid);
+        if (!((BaseStatement) fallbackStmt)
+            .executeWithFlags(QueryExecutor.QUERY_SUPPRESS_BEGIN)) {
+          throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
+        }
+        rs = castNonNull(fallbackStmt.getResultSet());
+        if (!rs.next()) {
+          throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
+        }
       }
 
       pgType = (int) rs.getLong(1);
@@ -728,6 +748,24 @@ public class TypeInfoCache implements TypeInfo {
       this.getArrayElementOidStatement = getArrayElementOidStatement = conn.prepareStatement(sql);
     }
     return getArrayElementOidStatement;
+  }
+
+  /**
+   * POLAR: Fallback statement for {@link #getPGArrayElement(int)} when the
+   * standard typelem lookup returns no rows (typelem=0). Reverses the
+   * relationship: find the element type whose {@code typarray} points to
+   * the given array-type OID.
+   */
+  private PreparedStatement prepareGetArrayElementByTyparrayStatement() throws SQLException {
+    PreparedStatement stmt = this.getArrayElementByTyparrayStatement;
+    if (stmt == null) {
+      String sql = "SELECT e.oid, n.nspname = ANY(current_schemas(true)), n.nspname, e.typname "
+          + "FROM pg_catalog.pg_type e "
+          + "JOIN pg_catalog.pg_namespace n ON e.typnamespace = n.oid "
+          + "WHERE e.typarray = ?";
+      this.getArrayElementByTyparrayStatement = stmt = conn.prepareStatement(sql);
+    }
+    return stmt;
   }
 
   public @Nullable Class<? extends PGobject> getPGobject(String type) {
