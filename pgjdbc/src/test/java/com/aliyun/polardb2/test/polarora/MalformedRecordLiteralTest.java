@@ -101,12 +101,45 @@ public class MalformedRecordLiteralTest {
             + "  END;\n"
             + "END claim_body_pkg;");
 
+    // Single-field record type to reproduce the "TC067907" scenario
+    // (PGobject value without commas and without parentheses)
+    stmt.execute(
+        "CREATE OR REPLACE TYPE rec_single_code AS (\n"
+            + "  code VARCHAR2(20)\n"
+            + ")");
+    stmt.execute("CREATE OR REPLACE TYPE tab_single_codes AS TABLE OF rec_single_code");
+    stmt.execute(
+        "CREATE OR REPLACE PACKAGE single_code_pkg AS\n"
+            + "  PROCEDURE process_codes(\n"
+            + "    p_company IN  VARCHAR2,\n"
+            + "    p_codes   IN  tab_single_codes,\n"
+            + "    p_count   OUT INTEGER,\n"
+            + "    p_status  OUT INTEGER\n"
+            + "  );\n"
+            + "END single_code_pkg;");
+    stmt.execute(
+        "CREATE OR REPLACE PACKAGE BODY single_code_pkg AS\n"
+            + "  PROCEDURE process_codes(\n"
+            + "    p_company IN  VARCHAR2,\n"
+            + "    p_codes   IN  tab_single_codes,\n"
+            + "    p_count   OUT INTEGER,\n"
+            + "    p_status  OUT INTEGER\n"
+            + "  ) IS\n"
+            + "  BEGIN\n"
+            + "    p_count  := p_codes.COUNT;\n"
+            + "    p_status := 0;\n"
+            + "  END;\n"
+            + "END single_code_pkg;");
+
     stmt.close();
   }
 
   @After
   public void tearDown() throws Exception {
     Statement stmt = conn.createStatement();
+    stmt.execute("DROP PACKAGE IF EXISTS single_code_pkg");
+    stmt.execute("DROP TYPE IF EXISTS tab_single_codes");
+    stmt.execute("DROP TYPE IF EXISTS rec_single_code");
     stmt.execute("DROP PACKAGE IF EXISTS claim_body_pkg");
     stmt.execute("DROP TYPE IF EXISTS tab_claim_items");
     stmt.execute("DROP TYPE IF EXISTS rec_claim_item");
@@ -360,6 +393,79 @@ public class MalformedRecordLiteralTest {
     System.out.println("[DIAGNOSTIC] Strings equal = " + pgObjStr.equals(structStr));
     assertEquals("PGobject and PgStruct arrays should produce same string after fix",
         structStr, pgObjStr);
+  }
+
+  // ===================================================================
+  // Bug reproduction: PGobject value WITHOUT commas (single field)
+  //
+  // Customer error:
+  //   ERROR: malformed record literal: "TC067907"
+  //   Detail: Missing left parenthesis.
+  //   Where: unnamed portal parameter $9 = '...'
+  //   SQL: begin CLAIM_BODY.UPDATE_IND_CLAIM_REC(?, ..., ?); end;
+  //
+  // Root cause: The heuristic in OBJECT_ARRAY.appendArray requires at
+  // least one comma (val.indexOf(',') >= 0) to auto-wrap. A PGobject
+  // value like "TC067907" (single field, no commas) falls through to
+  // the else branch and is emitted without parentheses.
+  // ===================================================================
+
+  /**
+   * Reproduction: PGobject with single value (no commas) as an element
+   * in a TABLE OF composite type array, called via begin...end block.
+   *
+   * <p>This reproduces the exact customer error:
+   *   ERROR: malformed record literal: "TC067907"
+   *   Missing left parenthesis.
+   */
+  @Test
+  public void testPGobjectSingleValueNoCommaInBeginEndBlock() throws SQLException {
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+
+    // Simulate framework creating PGobject with a single value — NO commas, NO parens
+    PGobject obj = new PGobject();
+    obj.setType("rec_single_code");
+    obj.setValue("TC067907");  // single value, no commas — old heuristic won't wrap!
+
+    Array array = pgConn.createArrayOf("tab_single_codes", new PGobject[]{obj});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin single_code_pkg.process_codes(?, ?, ?, ?); end;")) {
+      cs.setString(1, "CO");
+      cs.setArray(2, array);
+      cs.registerOutParameter(3, Types.INTEGER);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Should count 1 item", 1, cs.getInt(3));
+      assertEquals("Status should be 0", 0, cs.getInt(4));
+    }
+  }
+
+  /**
+   * Same scenario but with { call ... } syntax.
+   */
+  @Test
+  public void testPGobjectSingleValueNoCommaInCallSyntax() throws SQLException {
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+
+    PGobject obj = new PGobject();
+    obj.setType("rec_single_code");
+    obj.setValue("TC067907");
+
+    Array array = pgConn.createArrayOf("tab_single_codes", new PGobject[]{obj});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "{ call single_code_pkg.process_codes(?, ?, ?, ?) }")) {
+      cs.setString(1, "CO");
+      cs.setArray(2, array);
+      cs.registerOutParameter(3, Types.INTEGER);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Should count 1 item", 1, cs.getInt(3));
+      assertEquals("Status should be 0", 0, cs.getInt(4));
+    }
   }
 
   /**

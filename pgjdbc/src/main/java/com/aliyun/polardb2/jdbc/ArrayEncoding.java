@@ -1109,18 +1109,19 @@ final class ArrayEncoding {
            * but whose values lack enclosing parentheses.
            *
            * Frameworks (e.g., Manulife's OracleArrayParameter) create PGobject
-           * elements with comma-separated field values like "HHF01790,HH,RB,HOSP"
-           * but without the record literal parentheses: "(HHF01790,HH,RB,HOSP)".
+           * elements with field values like "HHF01790,HH,RB,HOSP" or even a single
+           * value like "TC067907", but without the record literal parentheses.
            *
            * PostgreSQL/PolarDB requires record literals in arrays to start with '('.
            * Without this fix the server rejects the value with:
            *   ERROR: malformed record literal: "HHF01790"
            *   Detail: Missing left parenthesis.
            *
-           * Heuristic: if the value does not start with '(' and contains at least
-           * one comma (indicating multiple fields), wrap it as a record literal.
-           * Values starting with '{' or '[' are excluded to avoid wrapping JSON,
-           * range, or array-typed PGobject values. */
+           * Heuristic: wrap the value as a record literal unless it already starts
+           * with '(' (already a record), '{' (JSON object / array literal),
+           * '[' (range / JSON array), or '"' (already quoted string).
+           * This covers both multi-field ("A,B,C") and single-field ("TC067907")
+           * composite values that are missing parentheses. */
           String val = ((PGobject) array[i]).getValue();
           if (val == null) {
             sb.append('N').append('U').append('L').append('L');
@@ -1128,7 +1129,7 @@ final class ArrayEncoding {
               && val.charAt(0) != '('
               && val.charAt(0) != '{'
               && val.charAt(0) != '['
-              && val.indexOf(',') >= 0) {
+              && val.charAt(0) != '"') {
             PgArray.escapeArrayElement(sb, "(" + val + ")");
           } else {
             PgArray.escapeArrayElement(sb, val);
