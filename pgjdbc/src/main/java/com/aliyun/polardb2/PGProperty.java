@@ -706,7 +706,7 @@ public enum PGProperty {
   /* POLAR */
   RESET_NLS_FORMAT(
       "resetNlsFormat",
-      "true",
+      "false",
       "Reset nls_timestamp_format/nls_timestamptz_format/nls_date_format at connection startup",
       false),
 

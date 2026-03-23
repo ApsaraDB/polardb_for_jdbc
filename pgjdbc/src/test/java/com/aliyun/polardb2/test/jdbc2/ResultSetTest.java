@@ -411,7 +411,15 @@ public class ResultSetTest extends BaseTest4 {
   @Test
   public void testgetBadBoolean() throws SQLException {
     testBadBoolean("'2017-03-13 14:25:48.130861'::timestamp", "2017-03-13 14:25:48.130861");
-    testBadBoolean("'2017-03-13'::date", "2017-03-13 00:00:00");
+    // Date string format depends on server nls_date_format setting,
+    // so query the actual string representation from server first.
+    Statement s = con.createStatement();
+    ResultSet dateRs = s.executeQuery("select '2017-03-13'::date");
+    assertTrue(dateRs.next());
+    String dateStr = dateRs.getString(1);
+    dateRs.close();
+    s.close();
+    testBadBoolean("'2017-03-13'::date", dateStr);
     testBadBoolean("'2017-03-13 14:25:48.130861'::time", "14:25:48.130861");
     testBadBoolean("ARRAY[[1,0],[0,1]]", "{{1,0},{0,1}}");
     // testBadBoolean("29::bit(4)", "1101");

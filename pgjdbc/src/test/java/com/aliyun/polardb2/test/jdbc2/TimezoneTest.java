@@ -102,6 +102,9 @@ public class TimezoneTest {
   private void connect() throws Exception {
     Properties p = new Properties();
     PGProperty.PREPARE_THRESHOLD.set(p, 1);
+    // TimezoneTest relies on exact string representations of timestamptz values,
+    // so we need ISO-format nls settings to produce predictable output.
+    PGProperty.RESET_NLS_FORMAT.set(p, true);
     con = TestUtil.openDB(p);
   }
 
@@ -933,7 +936,9 @@ public class TimezoneTest {
   }
 
   private void checkDatabaseContents(String query, String[][] correct) throws Exception {
-    Connection con2 = TestUtil.openDB();
+    Properties p = new Properties();
+    PGProperty.RESET_NLS_FORMAT.set(p, true);
+    Connection con2 = TestUtil.openDB(p);
     Statement s = con2.createStatement();
     assertFalse(s.execute("set time zone 'UTC'"));
     assertTrue(s.execute(query));
