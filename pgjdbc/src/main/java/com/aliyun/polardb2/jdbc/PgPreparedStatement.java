@@ -671,6 +671,9 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
           } else if (in instanceof LocalDate) {
             setDate(parameterIndex, (LocalDate) in);
             break;
+          } else if (in instanceof LocalDateTime) {
+            setDate(parameterIndex, ((LocalDateTime) in).toLocalDate());
+            break;
           } else {
             tmpd = getTimestampUtils().toDate(getDefaultCalendar(), in.toString());
           }
