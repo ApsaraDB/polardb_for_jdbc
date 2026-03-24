@@ -1404,7 +1404,7 @@ public class ResultSetTest extends BaseTest4 {
       try (Statement statement = connection.createStatement()) {
         for (int i = 0; i < 10; i++) {
           try (ResultSet resultSet = statement.executeQuery(
-              String.format("SELECT unnest(array_fill('8/10/%d'::timestamp, ARRAY[%d]))",
+              String.format("SELECT unnest(array_fill('%d-08-10'::timestamp, ARRAY[%d]))",
                   expectedYear, 500))) {
             while (resultSet.next()) {
               Timestamp d = resultSet.getTimestamp(1);

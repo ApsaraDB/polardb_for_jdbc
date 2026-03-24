@@ -68,7 +68,6 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
@@ -2936,13 +2935,14 @@ public class QueryExecutorImpl extends QueryExecutorBase {
       }
     }
 
-    if (name.equals("DateStyle") && !value.startsWith("ISO")
-        && !value.toUpperCase(Locale.ROOT).startsWith("ISO")) {
-      close(); // we're screwed now; we can't trust any subsequent date.
-      throw new PSQLException(GT.tr(
-          "The server''s DateStyle parameter was changed to {0}. The JDBC driver requires DateStyle to begin with ISO for correct operation.",
-          value), PSQLState.CONNECTION_FAILURE);
-    }
+    // POLAR: Disabled DateStyle=ISO enforcement to allow server-configured datestyle (e.g. ISO,DMY)
+    // if (name.equals("DateStyle") && !value.startsWith("ISO")
+    //     && !value.toUpperCase(Locale.ROOT).startsWith("ISO")) {
+    //   close(); // we're screwed now; we can't trust any subsequent date.
+    //   throw new PSQLException(GT.tr(
+    //       "The server''s DateStyle parameter was changed to {0}. The JDBC driver requires DateStyle to begin with ISO for correct operation.",
+    //       value), PSQLState.CONNECTION_FAILURE);
+    // }
 
     if (name.equals("standard_conforming_strings")) {
       if (value.equals("on")) {
