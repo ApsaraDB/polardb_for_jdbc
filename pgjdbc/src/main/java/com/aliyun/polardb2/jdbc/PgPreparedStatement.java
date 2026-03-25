@@ -640,8 +640,16 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     if (val.charAt(0) == '{') {
       // Already has array braces — check if inner content needs parentheses
       String inner = val.substring(1, val.length() - 1).trim();
-      if (inner.isEmpty() || inner.charAt(0) == '(' || inner.charAt(0) == '"') {
+      if (inner.isEmpty() || inner.charAt(0) == '(') {
         return val; // already formatted or empty array
+      }
+      if (inner.charAt(0) == '"') {
+        // Quoted element(s) — check if first one already has record parens
+        if (inner.length() > 1 && inner.charAt(1) == '(') {
+          return val; // already has record parens inside quotes
+        }
+        // Quoted but no record parens — use array parser to fix each element
+        return PgArray.fixCompositeArrayElements(val, ',');
       }
       // Inner content is raw record fields; wrap as a record literal and
       // use escapeArrayElement to add double quotes (protecting commas).
@@ -1384,7 +1392,15 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
       }
     }
 
-    setString(i, x.toString(), oid);
+    /* POLAR DIFF: Fix composite array elements from non-PgArray implementations.
+     * Custom Array implementations (e.g., Manulife's OracleArrayParameter) may
+     * return toString() values with record fields missing parentheses.
+     * Apply the same record literal wrapping as we do for PGobject TABLE OF types. */
+    String arrayStr = x.toString();
+    if (isArrayOfComposite(oid)) {
+      arrayStr = wrapArrayRecordLiterals(arrayStr);
+    }
+    setString(i, arrayStr, oid);
   }
 
   protected long createBlob(int i, InputStream inputStream,

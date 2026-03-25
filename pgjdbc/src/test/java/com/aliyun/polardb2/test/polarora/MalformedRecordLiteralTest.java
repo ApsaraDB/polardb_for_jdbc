@@ -19,10 +19,12 @@ import org.junit.Test;
 import java.sql.Array;
 import java.sql.CallableStatement;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Struct;
 import java.sql.Types;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -660,6 +662,251 @@ public class MalformedRecordLiteralTest {
       cs.setString(1, "HH");
       cs.setObject(2, struct);
       cs.setObject(3, obj);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  // ===================================================================
+  // Additional reproduction paths: other ways the framework might
+  // set TABLE OF array parameters that bypass our existing fixes.
+  //
+  // Customer still reports "malformed record literal: HHF01790" after
+  // previous fixes. The framework (Manulife OracleArrayParameter)
+  // might use code paths we haven't covered yet.
+  // ===================================================================
+
+  /**
+   * A minimal java.sql.Array implementation that simulates what the
+   * Manulife framework's OracleArrayParameter might produce when its
+   * toString() returns an unformatted array string.
+   */
+  private static class SimpleArrayWrapper implements Array {
+    private final String baseTypeName;
+    private final String stringValue;
+
+    SimpleArrayWrapper(String baseTypeName, String stringValue) {
+      this.baseTypeName = baseTypeName;
+      this.stringValue = stringValue;
+    }
+
+    @Override
+    public String getBaseTypeName() {
+      return baseTypeName;
+    }
+
+    @Override
+    public int getBaseType() {
+      return Types.STRUCT;
+    }
+
+    @Override
+    public String toString() {
+      return stringValue;
+    }
+
+    @Override
+    public Object getArray() {
+      return null;
+    }
+
+    @Override
+    public Object getArray(Map<String, Class<?>> map) {
+      return null;
+    }
+
+    @Override
+    public Object getArray(long index, int count) {
+      return null;
+    }
+
+    @Override
+    public Object getArray(long index, int count, Map<String, Class<?>> map) {
+      return null;
+    }
+
+    @Override
+    public ResultSet getResultSet() {
+      return null;
+    }
+
+    @Override
+    public ResultSet getResultSet(Map<String, Class<?>> map) {
+      return null;
+    }
+
+    @Override
+    public ResultSet getResultSet(long index, int count) {
+      return null;
+    }
+
+    @Override
+    public ResultSet getResultSet(long index, int count, Map<String, Class<?>> map) {
+      return null;
+    }
+
+    @Override
+    public void free() {
+    }
+  }
+
+  /**
+   * Path A: setArray with a custom Array implementation (non-PgArray).
+   *
+   * <p>Framework's OracleArrayParameter likely implements java.sql.Array.
+   * Its toString() returns a brace-wrapped flat list of field values:
+   * {@code {HHF01790,HH,EO,HOSP,15,900.0}} (no quotes, no record parens).
+   *
+   * <p>In setArray, non-PgArray goes to {@code setString(i, x.toString(), oid)}.
+   * The raw string is sent as-is → server splits on commas → each field
+   * is treated as a separate element → "malformed record literal: HHF01790".
+   */
+  @Test
+  public void testCustomArrayImplFlatFieldsNoQuotes() throws SQLException {
+    Array customArr = new SimpleArrayWrapper(
+        "rec_claim_item",
+        "{HHF01790,HH,RB,HOSP,15,900.0}");
+
+    Struct struct = conn.createStruct("rec_claim_item",
+        new Object[]{"HHF01790", "HH", "HOSP", "ALL", 1, 80000.0});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, struct);
+      cs.setArray(3, customArr);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  /**
+   * Path B: setArray with custom Array whose toString() has quotes but
+   * no record parentheses: {@code {"HHF01790,HH,RB,HOSP,15,900.0"}}.
+   *
+   * <p>Server extracts the quoted element (removing quotes) and gets
+   * {@code HHF01790,HH,RB,HOSP,15,900.0} — still no parentheses.
+   */
+  @Test
+  public void testCustomArrayImplQuotedRowNoParens() throws SQLException {
+    // Simulate a framework that quotes each row but doesn't add record parens
+    Array customArr = new SimpleArrayWrapper(
+        "rec_claim_item",
+        "{\"HHF01790,HH,RB,HOSP,15,900.0\"}");
+
+    Struct struct = conn.createStruct("rec_claim_item",
+        new Object[]{"HHF01790", "HH", "HOSP", "ALL", 1, 80000.0});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, struct);
+      cs.setArray(3, customArr);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  /**
+   * Path C: createArrayOf with String[] where each String is a
+   * comma-separated row without record parentheses.
+   *
+   * <p>STRING_ARRAY encoder quotes each string element but does not
+   * add record parentheses. Produces: {@code {"HHF01790,HH,RB,HOSP,15,900.0"}}.
+   * Server extracts unquoted {@code HHF01790,HH,...} and fails.
+   */
+  @Test
+  public void testCreateArrayOfWithStringRowNoParens() throws SQLException {
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+
+    // Framework might convert each row to a comma-separated String
+    String[] rows = new String[]{"HHF01790,HH,RB,HOSP,15,900.0"};
+    Array array = pgConn.createArrayOf("rec_claim_item", rows);
+
+    Struct struct = conn.createStruct("rec_claim_item",
+        new Object[]{"HHF01790", "HH", "HOSP", "ALL", 1, 80000.0});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, struct);
+      cs.setArray(3, array);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  /**
+   * Path D: createArrayOf with Object[] of String (not PGobject).
+   *
+   * <p>OBJECT_ARRAY encoder's else branch calls
+   * {@code PgArray.escapeArrayElement(sb, array[i].toString())} — quotes the
+   * string but does NOT add record parentheses.
+   */
+  @Test
+  public void testCreateArrayOfWithObjectStringNoParens() throws SQLException {
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+
+    Object[] rows = new Object[]{"HHF01790,HH,RB,HOSP,15,900.0"};
+    Array array = pgConn.createArrayOf("rec_claim_item", rows);
+
+    Struct struct = conn.createStruct("rec_claim_item",
+        new Object[]{"HHF01790", "HH", "HOSP", "ALL", 1, 80000.0});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, struct);
+      cs.setArray(3, array);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  /**
+   * Path E: createArrayOf with flattened field values as individual
+   * String elements — each field is a separate array element.
+   *
+   * <p>This is a FRAMEWORK-LEVEL USAGE BUG: individual field values
+   * are passed as separate array elements instead of being grouped
+   * into composite records. The driver wraps each element as a
+   * single-field record like {@code {"(HHF01790)","(HH)",...}}, but
+   * the server expects 6-field records — resulting in a type mismatch.
+   *
+   * <p>This test verifies the driver does NOT crash (no NPE etc.)
+   * but accepts that the server will reject the malformed records.
+   */
+  @Test(expected = SQLException.class)
+  public void testCreateArrayOfWithFlattenedFields() throws SQLException {
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+
+    // Framework might flatten row fields into individual array elements
+    String[] fields = new String[]{"HHF01790", "HH", "RB", "HOSP", "15", "900.0"};
+    Array array = pgConn.createArrayOf("rec_claim_item", fields);
+
+    Struct struct = conn.createStruct("rec_claim_item",
+        new Object[]{"HHF01790", "HH", "HOSP", "ALL", 1, 80000.0});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, struct);
+      cs.setArray(3, array);
       cs.registerOutParameter(4, Types.INTEGER);
       cs.registerOutParameter(5, Types.INTEGER);
       cs.execute();

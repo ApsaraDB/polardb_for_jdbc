@@ -1540,6 +1540,21 @@ public class PgConnection implements BaseConnection {
     }
 
     final String arrayString = arraySupport.toArrayString(delim, elements);
+
+    /* POLAR DIFF: Fix String/Object[] elements for composite array types.
+     * When createArrayOf is called with String[] or Object[] containing String
+     * elements for a composite (record) element type, the encoder just quotes
+     * the strings but does not add record literal parentheses (val1,val2,...).
+     * Use PgArray.fixCompositeArrayElements to add missing (...)  wrappers. */
+    int elemOid = typeInfo.getPGArrayElement(oid);
+    if (elemOid != Oid.UNSPECIFIED) {
+      int elemSqlType = typeInfo.getSQLType(elemOid);
+      if (elemSqlType == Types.STRUCT) {
+        return makeArray(oid, PgArray.fixCompositeArrayElements(arrayString, delim));
+      }
+    }
+    /* POLAR DIFF end */
+
     return makeArray(oid, arrayString);
   }
 

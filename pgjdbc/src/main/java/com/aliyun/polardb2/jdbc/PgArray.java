@@ -485,6 +485,60 @@ public class PgArray implements java.sql.Array {
     b.append('"');
   }
 
+  /**
+   * POLAR: Fix array elements that should be composite record literals but
+   * are missing the enclosing parentheses.
+   *
+   * <p>Parses the array string into individual elements, checks each one,
+   * and wraps elements that don't start with {@code (} in record literal
+   * parentheses. Elements that are already record literals (starting with
+   * {@code (}) are left unchanged.
+   *
+   * <p>Example: {@code {"HHF01790,HH,RB"}} becomes
+   * {@code {"(HHF01790,HH,RB)"}}.
+   *
+   * @param arrayString the array literal string
+   * @param delim the array delimiter character (usually ',')
+   * @return the fixed array string with record parentheses added where needed
+   */
+  public static String fixCompositeArrayElements(String arrayString, char delim) {
+    ArrayDecoding.PgArrayList list = ArrayDecoding.buildArrayList(arrayString, delim);
+    boolean needsFix = false;
+    for (int i = 0; i < list.size(); i++) {
+      Object elem = list.get(i);
+      if (elem instanceof String) {
+        String s = (String) elem;
+        if (!s.isEmpty() && s.charAt(0) != '(') {
+          needsFix = true;
+          break;
+        }
+      }
+    }
+    if (!needsFix) {
+      return arrayString;
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append('{');
+    for (int i = 0; i < list.size(); i++) {
+      if (i > 0) {
+        sb.append(delim);
+      }
+      Object elem = list.get(i);
+      if (elem == null) {
+        sb.append("NULL");
+      } else {
+        String s = (String) elem;
+        if (!s.isEmpty() && s.charAt(0) != '(') {
+          escapeArrayElement(sb, "(" + s + ")");
+        } else {
+          escapeArrayElement(sb, s);
+        }
+      }
+    }
+    sb.append('}');
+    return sb.toString();
+  }
+
   public boolean isBinary() {
     return fieldBytes != null;
   }
