@@ -77,6 +77,7 @@ public class TypeInfoCache implements TypeInfo {
   private @Nullable PreparedStatement getArrayDelimiterStatement;
   private @Nullable PreparedStatement getTypeInfoStatement;
   private @Nullable PreparedStatement getAllTypeInfoStatement;
+  private @Nullable PreparedStatement findCollectionByElementStmt;
   private final ResourceLock lock = new ResourceLock();
 
   // basic pg types info:
@@ -596,13 +597,82 @@ public class TypeInfoCache implements TypeInfo {
 
   public int getPGArrayType(@Nullable String elementTypeName) throws SQLException {
     elementTypeName = getTypeForAlias(elementTypeName);
-    // First try the standard PostgreSQL array notation (elementType[])
+
+    // POLAR: First try to find a PolarDB collection type for this element type.
+    // PolarDB supports VARRAY ('J'), nested table/TABLE OF ('K'), and associative
+    // array/INDEX BY ('L'). These Oracle-compatible collection types should be
+    // preferred when they exist, as Oracle mode stored procedures use them.
+    int elemOid = getPGType(elementTypeName);
+    if (elemOid != Oid.UNSPECIFIED) {
+      int collOid = findCollectionTypeByElement(elemOid);
+      if (collOid != Oid.UNSPECIFIED) {
+        return collOid;
+      }
+    }
+
+    // Fall back to standard PostgreSQL array notation (elementType[])
     int oid = getPGType(elementTypeName + "[]");
     // If not found, try the type name directly (for VARRAY types like actor_name_array)
     if (oid == Oid.UNSPECIFIED) {
       oid = getPGType(elementTypeName);
     }
     return oid;
+  }
+
+  /**
+   * POLAR: Find a collection type whose element type matches the given OID.
+   * PolarDB supports three kinds of Oracle-compatible collection types:
+   * <ul>
+   *   <li>VARRAY (typcategory='J') - variable-length arrays</li>
+   *   <li>Nested Table / TABLE OF (typcategory='K') - unbounded collections</li>
+   *   <li>Associative Array / INDEX BY (typcategory='L') - key-value maps</li>
+   * </ul>
+   *
+   * <p>This lookup is restricted to element types that are composite/record types
+   * (typcategory='C'). For standard scalar types (int4, varchar, etc.) we let
+   * the standard PostgreSQL array mechanism handle them, because a user-defined
+   * collection like {@code TYPE num_varray IS VARRAY(50) OF INTEGER} should NOT
+   * override the standard {@code _int4} array type. Users should pass the
+   * collection type name directly in those cases.
+   *
+   * @param elemOid the OID of the element type
+   * @return the collection type OID, or {@link Oid#UNSPECIFIED} if none found
+   */
+  private int findCollectionTypeByElement(int elemOid) throws SQLException {
+    try (ResourceLock ignore = lock.obtain()) {
+      PreparedStatement stmt = prepareFindCollectionByElementStmt();
+      stmt.setInt(1, elemOid);
+
+      if (!((BaseStatement) stmt).executeWithFlags(QueryExecutor.QUERY_SUPPRESS_BEGIN)) {
+        return Oid.UNSPECIFIED;
+      }
+
+      ResultSet rs = castNonNull(stmt.getResultSet());
+      int collOid = Oid.UNSPECIFIED;
+      if (rs.next()) {
+        collOid = (int) rs.getLong(1);
+        String typName = castNonNull(rs.getString(2));
+        oidToPgName.put(collOid, typName);
+        pgNameToOid.put(typName, collOid);
+      }
+      rs.close();
+      return collOid;
+    }
+  }
+
+  private PreparedStatement prepareFindCollectionByElementStmt() throws SQLException {
+    PreparedStatement stmt = this.findCollectionByElementStmt;
+    if (stmt == null) {
+      // Only find collection types whose element is a composite type (typcategory='C').
+      // J = VARRAY, K = Nested Table (TABLE OF), L = Associative Array (INDEX BY)
+      String sql = "SELECT ct.oid, ct.typname FROM pg_catalog.pg_type ct"
+          + " JOIN pg_catalog.pg_type et ON ct.typelem = et.oid"
+          + " WHERE ct.typelem = ? AND ct.typcategory IN ('J','K','L')"
+          + " AND et.typcategory = 'C'"
+          + " ORDER BY ct.oid LIMIT 1";
+      this.findCollectionByElementStmt = stmt = conn.prepareStatement(sql);
+    }
+    return stmt;
   }
 
   /**
