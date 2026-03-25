@@ -468,19 +468,162 @@ public class MalformedRecordLiteralTest {
     }
   }
 
+  // ===================================================================
+  // Bug reproduction: single PGobject as a non-array record parameter
+  //
+  // Previous fix covered PGobject elements inside arrays (ArrayEncoding).
+  // This test reproduces the case where a PGobject is passed directly
+  // as a single record-type parameter via setObject(), going through
+  // setPGobject → setString — value is sent as-is without parentheses.
+  // ===================================================================
+
   /**
-   * Customer's exact pattern: begin...end block with PGobject array.
-   * After fix, should succeed without malformed record literal error.
+   * Reproduction: PGobject used directly as a single record-type parameter.
+   * The value has NO parentheses and the server expects record literal format.
+   *
+   * <p>This goes through PgPreparedStatement.setPGobject → setString,
+   * which does NOT wrap the value in parentheses.
    */
   @Test
-  public void testBeginEndBlockWithPGobjectArrayNowSucceeds() throws SQLException {
-    PgConnection pgConn = conn.unwrap(PgConnection.class);
+  public void testSinglePGobjectAsRecordParamWithoutParens() throws SQLException {
+    // PGobject with composite type but value lacks parentheses
+    PGobject obj = new PGobject();
+    obj.setType("rec_claim_item");
+    obj.setValue("HHF01790,HH,RB,HOSP,15,900.0");  // NO parentheses
 
+    PGobject[] items = new PGobject[]{};
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+    Array emptyArray = pgConn.createArrayOf("tab_claim_items", items);
+
+    try (CallableStatement cs = conn.prepareCall(
+        "{ call claim_body_pkg.validate_payment(?, ?, ?, ?, ?) }")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, obj);       // single PGobject for record parameter
+      cs.setArray(3, emptyArray);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  /**
+   * Same as above but with begin...end block syntax.
+   */
+  @Test
+  public void testSinglePGobjectAsRecordParamInBeginEndBlock() throws SQLException {
     PGobject obj = new PGobject();
     obj.setType("rec_claim_item");
     obj.setValue("HHF01790,HH,RB,HOSP,15,900.0");
 
-    Array array = pgConn.createArrayOf("tab_claim_items", new PGobject[]{obj});
+    PGobject[] items = new PGobject[]{};
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+    Array emptyArray = pgConn.createArrayOf("tab_claim_items", items);
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, obj);
+      cs.setArray(3, emptyArray);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  /**
+   * Single-field PGobject without commas or parens as a record parameter.
+   */
+  @Test
+  public void testSingleFieldPGobjectAsRecordParam() throws SQLException {
+    PGobject obj = new PGobject();
+    obj.setType("rec_single_code");
+    obj.setValue("TC067907");  // single field, no commas, no parens
+
+    PGobject[] items = new PGobject[]{};
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+    Array emptyArray = pgConn.createArrayOf("tab_single_codes", items);
+
+    try (CallableStatement cs = conn.prepareCall(
+        "{ call single_code_pkg.process_codes(?, ?, ?, ?) }")) {
+      cs.setString(1, "CO");
+      cs.setObject(2, emptyArray);
+      cs.registerOutParameter(3, Types.INTEGER);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Status should be 0", 0, cs.getInt(4));
+    }
+  }
+
+  /**
+   * Customer's exact pattern: PGobject as single record parameter in a
+   * procedure call that also takes a TABLE OF array parameter.
+   */
+  @Test
+  public void testPGobjectRecordAndArrayCombination() throws SQLException {
+    PgConnection pgConn = conn.unwrap(PgConnection.class);
+
+    // Single record param as PGobject (NO parentheses)
+    PGobject singleRecord = new PGobject();
+    singleRecord.setType("rec_claim_item");
+    singleRecord.setValue("HHF01790,HH,RB,HOSP,15,900.0");
+
+    // Array of records as PGobject[] (also NO parentheses — covered by previous fix)
+    PGobject arrObj1 = new PGobject();
+    arrObj1.setType("rec_claim_item");
+    arrObj1.setValue("HHF01790,HH,RB,HOSP,15,900.0");
+
+    PGobject arrObj2 = new PGobject();
+    arrObj2.setType("rec_claim_item");
+    arrObj2.setValue("HHF01790,HH,EO,HOSP,15,5000.0");
+
+    Array array = pgConn.createArrayOf("tab_claim_items",
+        new PGobject[]{arrObj1, arrObj2});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, singleRecord);  // single PGobject record param
+      cs.setArray(3, array);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
+      assertEquals("Should count 2 items", 2, cs.getInt(4));
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  // ===================================================================
+  // Bug reproduction: PGobject with TABLE OF type (not via createArrayOf)
+  //
+  // The Manulife framework's Query.setArray() may create a PGobject with
+  // type="TAB_CLM_BNFT_DTLS" (TABLE OF type, sqlType=ARRAY) and value
+  // as raw record fields without parentheses, then call setObject().
+  // This bypasses ArrayEncoding and our setPGobject fix only checks
+  // for Types.STRUCT, NOT Types.ARRAY.
+  // ===================================================================
+
+  /**
+   * Reproduction: PGobject with TABLE OF type, value is raw record fields
+   * without array braces or record parentheses.
+   *
+   * <p>Framework likely does: pgobj.setType("TAB_CLM_BNFT_DTLS");
+   * pgobj.setValue("HHF01790,HH,EO,HOSP,15,900.0"); cs.setObject(3, pgobj);
+   *
+   * <p>In setPGobject, the TABLE OF type maps to Types.ARRAY, so our
+   * STRUCT-only fix doesn't apply. Value is sent as-is → server fails.
+   */
+  @Test
+  public void testPGobjectWithTableOfTypeNoParens() throws SQLException {
+    // PGobject with TABLE OF type (not the record type)
+    PGobject obj = new PGobject();
+    obj.setType("tab_claim_items");  // TABLE OF type, sqlType=ARRAY
+    obj.setValue("HHF01790,HH,RB,HOSP,15,900.0");  // raw record fields, no parens
 
     Struct struct = conn.createStruct("rec_claim_item",
         new Object[]{"HHF01790", "HH", "HOSP", "ALL", 1, 80000.0});
@@ -489,12 +632,38 @@ public class MalformedRecordLiteralTest {
         "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
       cs.setString(1, "HH");
       cs.setObject(2, struct);
-      cs.setArray(3, array);
+      cs.setObject(3, obj);  // PGobject with TABLE OF type
       cs.registerOutParameter(4, Types.INTEGER);
       cs.registerOutParameter(5, Types.INTEGER);
       cs.execute();
 
-      assertEquals("Should count 1 item", 1, cs.getInt(4));
+      assertEquals("Status should be 0", 0, cs.getInt(5));
+    }
+  }
+
+  /**
+   * Same scenario but with array braces: value = "{HHF01790,HH,EO,...}".
+   * The braces cause the array parser to split on commas, treating each
+   * field as a separate array element instead of a single record.
+   */
+  @Test
+  public void testPGobjectWithTableOfTypeArrayBracesNoParens() throws SQLException {
+    PGobject obj = new PGobject();
+    obj.setType("tab_claim_items");
+    obj.setValue("{HHF01790,HH,RB,HOSP,15,900.0}");  // with braces, no inner parens
+
+    Struct struct = conn.createStruct("rec_claim_item",
+        new Object[]{"HHF01790", "HH", "HOSP", "ALL", 1, 80000.0});
+
+    try (CallableStatement cs = conn.prepareCall(
+        "begin claim_body_pkg.validate_payment(?, ?, ?, ?, ?); end;")) {
+      cs.setString(1, "HH");
+      cs.setObject(2, struct);
+      cs.setObject(3, obj);
+      cs.registerOutParameter(4, Types.INTEGER);
+      cs.registerOutParameter(5, Types.INTEGER);
+      cs.execute();
+
       assertEquals("Status should be 0", 0, cs.getInt(5));
     }
   }

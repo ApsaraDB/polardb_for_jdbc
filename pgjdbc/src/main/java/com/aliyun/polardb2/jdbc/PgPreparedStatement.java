@@ -575,8 +575,94 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
       binObj.toBytes(data, 0);
       bindBytes(parameterIndex, data, oid);
     } else {
-      setString(parameterIndex, x.getValue(), oid);
+      /* POLAR DIFF: auto-wrap record literal for composite types and
+       * TABLE OF types whose elements are composite.
+       *
+       * Case 1 (Types.STRUCT): PGobject represents a composite/record type.
+       *   The server expects (val1,val2,...) format. Wrap if missing '('.
+       *
+       * Case 2 (Types.ARRAY): PGobject represents a TABLE OF / VARRAY type
+       *   whose element type is composite. The framework (e.g. Manulife's
+       *   OracleArrayParameter) may set the PGobject value as raw record
+       *   fields without array braces or record parentheses, or with braces
+       *   but missing inner parentheses.
+       *   - No braces: "val1,val2,..." → wrap as "{(val1,val2,...)}"
+       *   - With braces: "{val1,val2,...}" → wrap inner as "{(val1,val2,...)}"
+       *
+       * This mirrors the fix in ArrayEncoding.OBJECT_ARRAY.appendArray. */
+      String val = x.getValue();
+      int sqlType = connection.getTypeInfo().getSQLType(oid);
+      if (val != null && val.length() > 0) {
+        if (sqlType == Types.STRUCT
+            && val.charAt(0) != '('
+            && val.charAt(0) != '{'
+            && val.charAt(0) != '['
+            && val.charAt(0) != '"') {
+          val = "(" + val + ")";
+        } else if (sqlType == Types.ARRAY && isArrayOfComposite(oid)) {
+          val = wrapArrayRecordLiterals(val);
+        }
+      }
+      /* POLAR DIFF end */
+      setString(parameterIndex, val, oid);
     }
+  }
+
+  /**
+   * POLAR: Check if the given array type OID has composite (STRUCT) elements.
+   */
+  private boolean isArrayOfComposite(int arrayOid) throws SQLException {
+    TypeInfo typeInfo = connection.getTypeInfo();
+    int elemOid = typeInfo.getPGArrayElement(arrayOid);
+    return elemOid != Oid.UNSPECIFIED
+        && typeInfo.getSQLType(elemOid) == Types.STRUCT;
+  }
+
+  /**
+   * POLAR: Wrap record literal values inside an array-type PGobject value.
+   *
+   * <p>Handles two formats produced by Oracle-compatibility frameworks:
+   * <ul>
+   *   <li>No braces: {@code "val1,val2,..."} → {@code {"(val1,val2,...)"}}
+   *   <li>With braces but no inner parens: {@code "{val1,val2,...}"}
+   *       → {@code {"(val1,val2,...)"}}
+   * </ul>
+   *
+   * <p>Composite record literals within PostgreSQL arrays MUST be
+   * double-quoted because they contain commas. Without double-quoting,
+   * the array parser splits on commas inside the record literal,
+   * producing {@code malformed record literal: "(HHF01790"}.
+   *
+   * <p>Values that already contain properly parenthesized records
+   * (e.g. {@code {"(val1,val2,...)"}}) are returned unchanged.
+   */
+  private static String wrapArrayRecordLiterals(String val) {
+    if (val.charAt(0) == '{') {
+      // Already has array braces — check if inner content needs parentheses
+      String inner = val.substring(1, val.length() - 1).trim();
+      if (inner.isEmpty() || inner.charAt(0) == '(' || inner.charAt(0) == '"') {
+        return val; // already formatted or empty array
+      }
+      // Inner content is raw record fields; wrap as a record literal and
+      // use escapeArrayElement to add double quotes (protecting commas).
+      StringBuilder sb = new StringBuilder();
+      sb.append('{');
+      PgArray.escapeArrayElement(sb, "(" + inner + ")");
+      sb.append('}');
+      return sb.toString();
+    }
+    // No braces — single record value
+    StringBuilder sb = new StringBuilder();
+    sb.append('{');
+    if (val.charAt(0) != '(' && val.charAt(0) != '"') {
+      // Raw fields without parens — wrap in record literal + double quotes
+      PgArray.escapeArrayElement(sb, "(" + val + ")");
+    } else {
+      // Already has parens or quotes — just escape as array element
+      PgArray.escapeArrayElement(sb, val);
+    }
+    sb.append('}');
+    return sb.toString();
   }
 
   private void setMap(@Positive int parameterIndex, Map<?, ?> x) throws SQLException {
