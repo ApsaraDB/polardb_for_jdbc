@@ -1534,6 +1534,30 @@ public class PgConnection implements BaseConnection {
       return makeArray(oid, null);
     }
 
+    /* POLAR DIFF: Handle Object[][] for composite array types (TABLE OF).
+     *
+     * OracleArrayParameter.getOracleArray(conn) builds Object[][] where each
+     * inner Object[] represents the fields of a composite record, then calls
+     * conn.createArrayOf(tableName, data). Without this fix, ArrayEncoding
+     * treats Object[][] as a 2-D array and produces {{"HHF01790","HH",...}}
+     * instead of {"(HHF01790,HH,...)"}.
+     *
+     * PostgreSQL then parses the inner '{' as part of the first field value,
+     * causing "value too long for type character varying(8 byte)" errors
+     * when the first field is exactly at its length limit.
+     *
+     * Fix: Detect Object[][] with STRUCT element type and convert each inner
+     * Object[] to a properly formatted record literal (val1,val2,...). */
+    int elemOid = typeInfo.getPGArrayElement(oid);
+    if (elemOid != Oid.UNSPECIFIED) {
+      int elemSqlType = typeInfo.getSQLType(elemOid);
+      if (elemSqlType == Types.STRUCT && isObjectArray2D(elements)) {
+        String arrayString = buildCompositeArrayFromObject2D((Object[][]) elements, delim);
+        return makeArray(oid, arrayString);
+      }
+    }
+    /* POLAR DIFF end */
+
     final ArrayEncoding.ArrayEncoder arraySupport = ArrayEncoding.getArrayEncoder(elements);
     if (arraySupport.supportBinaryRepresentation(oid) && getPreferQueryMode() != PreferQueryMode.SIMPLE) {
       return new PgArray(this, oid, arraySupport.toBinaryRepresentation(this, elements, oid));
@@ -1546,7 +1570,6 @@ public class PgConnection implements BaseConnection {
      * elements for a composite (record) element type, the encoder just quotes
      * the strings but does not add record literal parentheses (val1,val2,...).
      * Use PgArray.fixCompositeArrayElements to add missing (...)  wrappers. */
-    int elemOid = typeInfo.getPGArrayElement(oid);
     if (elemOid != Oid.UNSPECIFIED) {
       int elemSqlType = typeInfo.getSQLType(elemOid);
       if (elemSqlType == Types.STRUCT) {
@@ -1556,6 +1579,106 @@ public class PgConnection implements BaseConnection {
     /* POLAR DIFF end */
 
     return makeArray(oid, arrayString);
+  }
+
+  /**
+   * POLAR: Check if the object is a 2-D Object array (Object[][]) where each
+   * inner element is Object[] representing composite record fields.
+   */
+  private boolean isObjectArray2D(@Nullable Object obj) {
+    if (obj == null) {
+      return false;
+    }
+    Class<?> clazz = obj.getClass();
+    if (!clazz.isArray()) {
+      return false;
+    }
+    Class<?> componentType = clazz.getComponentType();
+    if (componentType == null || !componentType.isArray()) {
+      return false;
+    }
+    // Check if it's Object[][] (inner arrays are Object[])
+    Class<?> innerComponentType = componentType.getComponentType();
+    return innerComponentType != null && Object.class.equals(innerComponentType);
+  }
+
+  /**
+   * POLAR: Convert Object[][] to a PostgreSQL array string where each inner
+   * Object[] is formatted as a composite record literal (val1,val2,...).
+   *
+   * @param data the 2-D array where each inner array represents record fields
+   * @param delim the array delimiter (usually ',')
+   * @return a PostgreSQL array string like {"(val1,val2,...)","(val3,val4,...)"}
+   */
+  private String buildCompositeArrayFromObject2D(Object[][] data, char delim) {
+    StringBuilder sb = new StringBuilder();
+    sb.append('{');
+    for (int i = 0; i < data.length; i++) {
+      if (i > 0) {
+        sb.append(delim);
+      }
+      Object[] row = data[i];
+      if (row == null) {
+        sb.append("NULL");
+      } else {
+        // Build the record literal (val1,val2,...)
+        StringBuilder recordSb = new StringBuilder();
+        recordSb.append('(');
+        for (int j = 0; j < row.length; j++) {
+          if (j > 0) {
+            recordSb.append(',');
+          }
+          Object val = row[j];
+          if (val != null) {
+            String strVal = val.toString();
+            // Escape special characters in record field values
+            // In composite literals, we need to escape quotes and backslashes
+            // and quote values containing special chars (comma, paren, quote, backslash, whitespace)
+            if (needsQuotingInRecord(strVal)) {
+              recordSb.append('"');
+              for (int k = 0; k < strVal.length(); k++) {
+                char c = strVal.charAt(k);
+                if (c == '"' || c == '\\') {
+                  recordSb.append('\\');
+                }
+                recordSb.append(c);
+              }
+              recordSb.append('"');
+            } else {
+              recordSb.append(strVal);
+            }
+          }
+          // null values are represented by empty string between commas in record literals
+        }
+        recordSb.append(')');
+        // Escape the entire record as an array element
+        PgArray.escapeArrayElement(sb, recordSb.toString());
+      }
+    }
+    sb.append('}');
+    return sb.toString();
+  }
+
+  /**
+   * POLAR: Check if a string value needs quoting inside a composite record literal.
+   * Values need quoting if they contain: comma, parenthesis, quote, backslash,
+   * or leading/trailing whitespace.
+   */
+  private boolean needsQuotingInRecord(String s) {
+    if (s.isEmpty()) {
+      return false;
+    }
+    // Check for leading/trailing whitespace
+    if (Character.isWhitespace(s.charAt(0)) || Character.isWhitespace(s.charAt(s.length() - 1))) {
+      return true;
+    }
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == ',' || c == '(' || c == ')' || c == '"' || c == '\\') {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Override

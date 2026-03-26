@@ -726,4 +726,184 @@ public class CompositeTypeNullDateTest {
       rs.close();
     }
   }
+
+  // ===================================================================
+  // Part 6: Object[][] (2D array) tests for composite type arrays
+  // ===================================================================
+
+  /**
+   * Test Object[][] with all fields populated.
+   *
+   * <p>OracleArrayParameter builds Object[][] where each inner Object[] represents
+   * one composite record. This tests that format is correctly handled.
+   */
+  @Test
+  public void testObject2DArrayAllFieldsPopulated() throws SQLException {
+    // Build Object[][] directly (simulating OracleArrayParameter)
+    Object[][] data = new Object[2][];
+    data[0] = new Object[]{"ACT1", Date.valueOf("2025-06-15"),
+        Date.valueOf("2025-07-01"), new java.math.BigDecimal("1234.56")};
+    data[1] = new Object[]{"ACT2", Date.valueOf("2025-08-01"),
+        Date.valueOf("2025-09-01"), new java.math.BigDecimal("5678.90")};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test Object[][] with null field values within rows.
+   *
+   * <p>In PostgreSQL composite literals, null values are represented by empty
+   * content between commas: (val1,,val3) means the second field is NULL.
+   */
+  @Test
+  public void testObject2DArrayWithNullFieldValues() throws SQLException {
+    Object[][] data = new Object[2][];
+    // Row 1: some nulls
+    data[0] = new Object[]{"ACT1", null, null, null};
+    // Row 2: mixed nulls
+    data[1] = new Object[]{"ACT2", Date.valueOf("2025-06-15"), null,
+        new java.math.BigDecimal("99.99")};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test Object[][] with a completely null row (inner Object[] is null).
+   */
+  @Test
+  public void testObject2DArrayWithNullRow() throws SQLException {
+    Object[][] data = new Object[3][];
+    data[0] = new Object[]{"ACT1", Date.valueOf("2025-01-01"), null, null};
+    data[1] = null;  // Entire row is NULL
+    data[2] = new Object[]{"ACT3", null, Date.valueOf("2025-12-31"), null};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test Object[][] with all fields null in a row.
+   */
+  @Test
+  public void testObject2DArrayWithAllNullFields() throws SQLException {
+    Object[][] data = new Object[2][];
+    data[0] = new Object[]{null, null, null, null};  // All fields null
+    data[1] = new Object[]{"ACT2", Date.valueOf("2025-06-15"),
+        Date.valueOf("2025-07-01"), new java.math.BigDecimal("100")};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test empty Object[][] array (zero rows).
+   */
+  @Test
+  public void testObject2DArrayEmpty() throws SQLException {
+    Object[][] data = new Object[0][];
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test Object[][] with single row.
+   */
+  @Test
+  public void testObject2DArraySingleRow() throws SQLException {
+    Object[][] data = new Object[1][];
+    data[0] = new Object[]{"SINGLE", Date.valueOf("2025-05-05"),
+        Date.valueOf("2025-06-06"), new java.math.BigDecimal("0.01")};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test Object[][] with empty string values (distinct from null).
+   */
+  @Test
+  public void testObject2DArrayWithEmptyStrings() throws SQLException {
+    Object[][] data = new Object[1][];
+    // Empty string for action_code, not null
+    data[0] = new Object[]{"", null, null, null};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test Object[][] with special characters that need escaping.
+   */
+  @Test
+  public void testObject2DArrayWithSpecialCharacters() throws SQLException {
+    Object[][] data = new Object[1][];
+    // action_code contains special chars: comma, quote, parenthesis
+    data[0] = new Object[]{"A,\"(B)", Date.valueOf("2025-01-01"), null, null};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
+
+  /**
+   * Test Object[][] with multiple rows all having various null patterns.
+   */
+  @Test
+  public void testObject2DArrayMixedNullPatterns() throws SQLException {
+    Object[][] data = new Object[5][];
+    // Row 1: all populated
+    data[0] = new Object[]{"FULL", Date.valueOf("2025-01-01"),
+        Date.valueOf("2025-02-01"), new java.math.BigDecimal("100")};
+    // Row 2: first field null
+    data[1] = new Object[]{null, Date.valueOf("2025-03-01"),
+        Date.valueOf("2025-04-01"), new java.math.BigDecimal("200")};
+    // Row 3: middle fields null
+    data[2] = new Object[]{"MID", null, null, new java.math.BigDecimal("300")};
+    // Row 4: last field null
+    data[3] = new Object[]{"LAST", Date.valueOf("2025-05-01"),
+        Date.valueOf("2025-06-01"), null};
+    // Row 5: all null
+    data[4] = new Object[]{null, null, null, null};
+
+    Array array = conn.createArrayOf("test_tbl_pol_info", data);
+
+    CallableStatement cs = conn.prepareCall("{ call test_proc_pol_info(?) }");
+    cs.setArray(1, array);
+    cs.execute();
+    cs.close();
+  }
 }
