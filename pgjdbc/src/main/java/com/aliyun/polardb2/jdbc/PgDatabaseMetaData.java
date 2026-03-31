@@ -1668,6 +1668,12 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
           columnSize = connection.getTypeInfo().getDisplaySize(typeOid, typeMod);
         }
       }
+
+      // For Oracle compatibility: limit VARCHAR column size to 4000
+      if (sqlType == Types.VARCHAR && (columnSize > 4000 || columnSize < 0)) {
+        columnSize = 4000;
+      }
+
       tuple[6] = connection.encodeString(Integer.toString(columnSize));
       // Give null for an unset scale on Decimal and Numeric columns
       if (((sqlType == Types.NUMERIC) || (sqlType == Types.DECIMAL)) && (typeMod == -1)) {
@@ -2093,6 +2099,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
       int columnSize = connection.getTypeInfo().getPrecision(typeOid, typeMod);
       if ( sqlType != Types.NUMERIC && columnSize == 0) {
         columnSize = connection.getTypeInfo().getDisplaySize(typeOid, typeMod);
+      }
+      // For Oracle compatibility: limit VARCHAR column size to 4000
+      if (sqlType == Types.VARCHAR && (columnSize > 4000 || columnSize < 0)) {
+        columnSize = 4000;
       }
       tuple[0] = connection.encodeString(Integer.toString(scope));
       tuple[1] = rs.getBytes("attname");

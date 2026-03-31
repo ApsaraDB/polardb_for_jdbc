@@ -494,4 +494,89 @@ public class DatabaseMetaDataTest {
       }
     }
   }
+
+  /**
+   * Test that VARCHAR column size is limited to 4000 for Oracle compatibility.
+   * When typmod > 4000 or typmod < 0, columnSize should be set to 4000.
+   */
+  @Test
+  public void testVarcharColumnSizeLimitedTo4000() throws SQLException {
+    // Create a table with various varchar column sizes
+    TestUtil.execute("CREATE TABLE test_varchar_sizes ("
+        + "col_normal VARCHAR(100), "
+        + "col_max_oracle VARCHAR(4000), "
+        + "col_exceed VARCHAR(10000), "
+        + "col_unlimited VARCHAR, "
+        + "col_text TEXT"
+        + ")", conn);
+
+    try {
+      DatabaseMetaData dbmd = conn.getMetaData();
+      try (ResultSet rs = dbmd.getColumns(null, null, "test_varchar_sizes", null)) {
+        // col_normal: VARCHAR(100) - should remain 100
+        assertTrue(rs.next());
+        assertEquals("col_normal", rs.getString("COLUMN_NAME"));
+        assertEquals(100, rs.getInt("COLUMN_SIZE"));
+
+        // col_max_oracle: VARCHAR(4000) - should remain 4000
+        assertTrue(rs.next());
+        assertEquals("col_max_oracle", rs.getString("COLUMN_NAME"));
+        assertEquals(4000, rs.getInt("COLUMN_SIZE"));
+
+        // col_exceed: VARCHAR(10000) - should be limited to 4000
+        assertTrue(rs.next());
+        assertEquals("col_exceed", rs.getString("COLUMN_NAME"));
+        assertEquals(4000, rs.getInt("COLUMN_SIZE"));
+
+        // col_unlimited: VARCHAR without length - typmod is -1, should be limited to 4000
+        assertTrue(rs.next());
+        assertEquals("col_unlimited", rs.getString("COLUMN_NAME"));
+        int unlimitedSize = rs.getInt("COLUMN_SIZE");
+        assertTrue("VARCHAR without length should be limited to 4000, but was " + unlimitedSize,
+            unlimitedSize <= 4000);
+
+        // col_text: TEXT type - not VARCHAR, should not be affected by the limit
+        assertTrue(rs.next());
+        assertEquals("col_text", rs.getString("COLUMN_NAME"));
+        // TEXT type doesn't have the 4000 limit applied (it's not Types.VARCHAR in some cases)
+      }
+    } finally {
+      TestUtil.dropTable(conn, "test_varchar_sizes");
+    }
+  }
+
+  /**
+   * Test that VARCHAR column size boundary values are handled correctly.
+   */
+  @Test
+  public void testVarcharColumnSizeBoundary() throws SQLException {
+    // Test boundary values: 3999, 4000, 4001
+    TestUtil.execute("CREATE TABLE test_varchar_boundary ("
+        + "col_3999 VARCHAR(3999), "
+        + "col_4000 VARCHAR(4000), "
+        + "col_4001 VARCHAR(4001)"
+        + ")", conn);
+
+    try {
+      DatabaseMetaData dbmd = conn.getMetaData();
+      try (ResultSet rs = dbmd.getColumns(null, null, "test_varchar_boundary", null)) {
+        // col_3999: should remain 3999
+        assertTrue(rs.next());
+        assertEquals("col_3999", rs.getString("COLUMN_NAME"));
+        assertEquals(3999, rs.getInt("COLUMN_SIZE"));
+
+        // col_4000: should remain 4000 (exactly at limit)
+        assertTrue(rs.next());
+        assertEquals("col_4000", rs.getString("COLUMN_NAME"));
+        assertEquals(4000, rs.getInt("COLUMN_SIZE"));
+
+        // col_4001: should be limited to 4000
+        assertTrue(rs.next());
+        assertEquals("col_4001", rs.getString("COLUMN_NAME"));
+        assertEquals(4000, rs.getInt("COLUMN_SIZE"));
+      }
+    } finally {
+      TestUtil.dropTable(conn, "test_varchar_boundary");
+    }
+  }
 }
