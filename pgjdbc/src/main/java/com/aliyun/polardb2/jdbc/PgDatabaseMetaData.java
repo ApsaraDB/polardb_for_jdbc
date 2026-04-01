@@ -1669,8 +1669,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         }
       }
 
-      // For Oracle compatibility: limit VARCHAR column size to 4000
-      if (sqlType == Types.VARCHAR && (columnSize > 4000 || columnSize < 0)) {
+      // For Oracle compatibility: limit column size to 4000 for character/LOB types
+      if ((sqlType == Types.VARCHAR || sqlType == Types.BLOB || sqlType == Types.CLOB
+          || sqlType == Types.NCLOB || sqlType == Types.LONGVARCHAR || sqlType == Types.LONGNVARCHAR)
+          && (columnSize > 4000 || columnSize < 0)) {
         columnSize = 4000;
       }
 
@@ -2100,8 +2102,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
       if ( sqlType != Types.NUMERIC && columnSize == 0) {
         columnSize = connection.getTypeInfo().getDisplaySize(typeOid, typeMod);
       }
-      // For Oracle compatibility: limit VARCHAR column size to 4000
-      if (sqlType == Types.VARCHAR && (columnSize > 4000 || columnSize < 0)) {
+      // For Oracle compatibility: limit column size to 4000 for character/LOB types
+      if ((sqlType == Types.VARCHAR || sqlType == Types.BLOB || sqlType == Types.CLOB
+          || sqlType == Types.NCLOB || sqlType == Types.LONGVARCHAR || sqlType == Types.LONGNVARCHAR)
+          && (columnSize > 4000 || columnSize < 0)) {
         columnSize = 4000;
       }
       tuple[0] = connection.encodeString(Integer.toString(scope));
