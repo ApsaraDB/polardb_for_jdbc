@@ -912,7 +912,7 @@ public enum PGProperty {
    */
   UNKNOWN_LENGTH(
       "unknownLength",
-      Integer.toString(Integer.MAX_VALUE),
+      Integer.toString(4000),
       "Specifies the length to return for types of unknown length"),
 
   /* POLAR */

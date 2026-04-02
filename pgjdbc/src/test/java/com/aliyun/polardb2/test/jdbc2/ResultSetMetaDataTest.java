@@ -226,13 +226,14 @@ public class ResultSetMetaDataTest extends BaseTest4 {
 
     assertEquals(5, rsmd.getColumnDisplaySize(1));
     assertEquals(5, rsmd.getColumnDisplaySize(2));
-    assertEquals(Integer.MAX_VALUE, rsmd.getColumnDisplaySize(3));
-    assertEquals(Integer.MAX_VALUE, rsmd.getColumnDisplaySize(4));
-    assertEquals(Integer.MAX_VALUE, rsmd.getColumnDisplaySize(5));
+    // unfixedvarchar, txt, bytearr, ip use UNKNOWN_LENGTH which defaults to 4000 for Oracle compatibility
+    assertEquals(4000, rsmd.getColumnDisplaySize(3));
+    assertEquals(4000, rsmd.getColumnDisplaySize(4));
+    assertEquals(4000, rsmd.getColumnDisplaySize(5));
     assertEquals(8, rsmd.getColumnDisplaySize(6));
     assertEquals(7, rsmd.getColumnDisplaySize(7));
     assertEquals(131089, rsmd.getColumnDisplaySize(8));
-    assertEquals(Integer.MAX_VALUE, rsmd.getColumnDisplaySize(9));
+    assertEquals(4000, rsmd.getColumnDisplaySize(9));
   }
 
   @Test
