@@ -7,6 +7,7 @@ package com.aliyun.polardb2.test.jdbc2;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -21,8 +22,12 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -179,6 +184,11 @@ public class ResultSetTest extends BaseTest4 {
     TestUtil.createTable(con, "testpgobject", "id integer NOT NULL, d date, PRIMARY KEY (id)");
     stmt.execute("INSERT INTO testpgobject VALUES(1, '2010-11-3')");
 
+    TestUtil.createTable(con, "testclobtext", "id integer, content text");
+    stmt.executeUpdate("INSERT INTO testclobtext VALUES(1, 'Hello, PolarDB JDBC getClob test!')");
+    stmt.executeUpdate("INSERT INTO testclobtext VALUES(2, 'Second row: special chars < > & \"')");
+    stmt.executeUpdate("INSERT INTO testclobtext VALUES(3, null)");
+
     stmt.close();
   }
 
@@ -193,7 +203,51 @@ public class ResultSetTest extends BaseTest4 {
     TestUtil.dropTable(con, "testboolint");
     TestUtil.dropTable(con, "testnumeric");
     TestUtil.dropTable(con, "testpgobject");
+    TestUtil.dropTable(con, "testclobtext");
     super.tearDown();
+  }
+
+  /**
+   * Test reading a text column via getClob(), using getCharacterStream() to read content,
+   * mimicking the OracleCachedResultSet.getClob() approach.
+   */
+  @Test
+  public void testGetClobFromTextColumn() throws SQLException, IOException {
+    Statement stmt = con.createStatement();
+    ResultSet rs = stmt.executeQuery(
+        TestUtil.selectSQL("testclobtext", "id, content") + " ORDER BY id");
+    try {
+      // Row 1: normal text content — read via getClob().getCharacterStream()
+      assertTrue("Expected first row", rs.next());
+      Clob clob1 = (Clob) rs.getObject("content");
+      assertNotNull("Clob from text column should not be null", clob1);
+      Reader reader1 = clob1.getCharacterStream();
+      StringWriter writer1 = new StringWriter();
+      int ch;
+      while ((ch = reader1.read()) != -1) {
+        writer1.write(ch);
+      }
+      assertEquals("Hello, PolarDB JDBC getClob test!", writer1.toString());
+
+      // Row 2: text with special characters
+      assertTrue("Expected second row", rs.next());
+      Clob clob2 = (Clob) rs.getObject("content");
+      assertNotNull("Clob from text column should not be null", clob2);
+      Reader reader2 = clob2.getCharacterStream();
+      StringWriter writer2 = new StringWriter();
+      while ((ch = reader2.read()) != -1) {
+        writer2.write(ch);
+      }
+      assertEquals("Second row: special chars < > & \"", writer2.toString());
+
+      // Row 3: null text column
+      assertTrue("Expected third row", rs.next());
+      Clob clob3 = (Clob) rs.getObject("content");
+      assertNull("Clob from null text column should be null", clob3);
+    } finally {
+      rs.close();
+      stmt.close();
+    }
   }
 
   @Test
