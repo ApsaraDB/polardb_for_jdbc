@@ -1434,4 +1434,44 @@ public class ResultSetTest extends BaseTest4 {
     e.awaitTermination(1, TimeUnit.MINUTES);
   }
 
+  /**
+   * Test getTimestamp on a date column with specific nls_date_format and datestyle settings.
+   * This tests Oracle RR format compatibility where 2-digit years are interpreted as:
+   * - 50-99: previous century (1950-1999 when current year is in 00-49)
+   * - 00-49: current century (2000-2049 when current year is in 00-49)
+   */
+  @Test
+  public void testGetTimestampWithNlsDateFormat() throws SQLException {
+    Statement stmt = con.createStatement();
+    try {
+      // Set nls_date_format to 'DD-MON-RR' and datestyle to 'ISO, DMY'
+      stmt.execute("SET nls_date_format = 'DD-MON-RR'");
+      stmt.execute("SET datestyle = 'ISO, DMY'");
+
+      // Create a test table with a date column
+      TestUtil.createTable(con, "test_nls_date", "d date");
+      // Insert 1990-01-01, which will be returned as "01-JAN-90" with RR format
+      stmt.execute("INSERT INTO test_nls_date VALUES ('1990-01-01')");
+
+      // Query and get the timestamp
+      ResultSet rs = stmt.executeQuery("SELECT d FROM test_nls_date");
+      assertTrue(rs.next());
+
+      Timestamp ts = rs.getTimestamp(1);
+      assertNotNull("getTimestamp should not return null", ts);
+
+      // Verify the date components - RR format should correctly interpret "90" as 1990
+      java.util.Calendar cal = java.util.Calendar.getInstance();
+      cal.setTime(ts);
+      assertEquals("Year should be 1990 (RR format: 90 -> 1990)", 1990, cal.get(java.util.Calendar.YEAR));
+      assertEquals("Month should be January (0)", 0, cal.get(java.util.Calendar.MONTH));
+      assertEquals("Day should be 1", 1, cal.get(java.util.Calendar.DAY_OF_MONTH));
+
+      rs.close();
+    } finally {
+      TestUtil.dropTable(con, "test_nls_date");
+      stmt.close();
+    }
+  }
+
 }

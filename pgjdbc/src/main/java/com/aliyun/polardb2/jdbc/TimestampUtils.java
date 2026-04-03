@@ -221,6 +221,9 @@ public class TimestampUtils {
   /**
    * Converts Oracle NLS date strings (DD-Mon-YYYY or DD-Mon-YY) to ISO format (YYYY-MM-DD[...]).
    * Examples: "06-Mar-2026" -> "2026-03-06", "06-MAR-26" -> "2026-03-06".
+   * For 2-digit years, applies Oracle RR format rules:
+   * - If year is 00-49: use current century if current year is 00-49, else next century
+   * - If year is 50-99: use previous century if current year is 00-49, else current century
    * Returns the original string unchanged if it does not match the Oracle format.
    */
   private static String normalizeOracleDateFormat(String str) {
@@ -266,11 +269,52 @@ public class TimestampUtils {
     }
     String yearStr = remainder.substring(0, yearEnd);
     if (yearStr.length() == 2) {
-      yearStr = "20" + yearStr;
+      // Apply Oracle RR format rules for 2-digit year
+      yearStr = convertRRYear(Integer.parseInt(yearStr));
     }
     String suffix = remainder.substring(yearEnd);
     String day = dash1 == 1 ? "0" + str.substring(0, 1) : str.substring(0, 2);
     return yearStr + "-" + monthNum + "-" + day + suffix;
+  }
+
+  /**
+   * Converts a 2-digit year to a 4-digit year using Oracle RR format rules.
+   * RR format interprets the year based on the current year:
+   * - If input year is 00-49:
+   *   - Current year 00-49: return current century (20xx)
+   *   - Current year 50-99: return next century (21xx)
+   * - If input year is 50-99:
+   *   - Current year 00-49: return previous century (19xx)
+   *   - Current year 50-99: return current century (19xx)
+   *
+   * @param twoDigitYear the 2-digit year (0-99)
+   * @return the 4-digit year as a string
+   */
+  private static String convertRRYear(int twoDigitYear) {
+    int currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR);
+    int currentYearLastTwo = currentYear % 100;
+    int currentCentury = (currentYear / 100) * 100;
+
+    int fullYear;
+    if (twoDigitYear >= 0 && twoDigitYear <= 49) {
+      if (currentYearLastTwo >= 0 && currentYearLastTwo <= 49) {
+        // Both in 00-49: use current century
+        fullYear = currentCentury + twoDigitYear;
+      } else {
+        // Input 00-49, current 50-99: use next century
+        fullYear = currentCentury + 100 + twoDigitYear;
+      }
+    } else {
+      // twoDigitYear is 50-99
+      if (currentYearLastTwo >= 0 && currentYearLastTwo <= 49) {
+        // Input 50-99, current 00-49: use previous century
+        fullYear = currentCentury - 100 + twoDigitYear;
+      } else {
+        // Both in 50-99: use current century
+        fullYear = currentCentury + twoDigitYear;
+      }
+    }
+    return String.valueOf(fullYear);
   }
   /* POLAR DIFF end */
 
