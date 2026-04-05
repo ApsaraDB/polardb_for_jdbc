@@ -2374,6 +2374,23 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
       return trimString(columnIndex, obj.toString());
     }
 
+    // POLAR: In text mode, normalize timestamp output to standard format YYYY-MM-DD HH:MI:SS
+    // This handles DD-Mon-RR and other NLS formats from the database
+    if (fields[columnIndex - 1].getOID() == Oid.TIMESTAMP) {
+      Encoding encoding = connection.getEncoding();
+      try {
+        String rawValue = encoding.decode(value);
+        // Parse the timestamp value and reformat to standard output (without timezone)
+        Timestamp ts = getTimestampUtils().toTimestamp(null, rawValue);
+        return getTimestampUtils().toString(null, ts, false);
+      } catch (IOException ioe) {
+        throw new PSQLException(
+            GT.tr("Invalid character data was found for timestamp field."),
+            PSQLState.DATA_ERROR, ioe);
+      }
+    }
+    // POLAR end
+
     Encoding encoding = connection.getEncoding();
     try {
       return trimString(columnIndex, encoding.decode(value));

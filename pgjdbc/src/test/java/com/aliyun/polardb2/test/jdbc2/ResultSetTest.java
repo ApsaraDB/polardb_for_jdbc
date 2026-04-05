@@ -1528,4 +1528,51 @@ public class ResultSetTest extends BaseTest4 {
     }
   }
 
+  /**
+   * Test getString on a date column and convert to Timestamp using Timestamp.valueOf().
+   * This tests that date field can be read as string and converted to timestamp.
+   * Note: The driver returns date in "YYYY-MM-DD HH:MI:SS" format for compatibility.
+   */
+  @Test
+  public void testGetStringFromDateAndConvertToTimestamp() throws SQLException {
+    Statement stmt = con.createStatement();
+    try {
+      // Create a test table with a date column
+      TestUtil.createTable(con, "test_date_to_timestamp", "d date");
+      // Insert a known date
+      stmt.execute("INSERT INTO test_date_to_timestamp VALUES ('2024-03-15')");
+
+      // Query and get the date as string
+      ResultSet rs = stmt.executeQuery("SELECT d FROM test_date_to_timestamp");
+      assertTrue(rs.next());
+
+      String dateStr = rs.getString(1);
+      assertNotNull("getString should not return null", dateStr);
+
+      // Print the actual date string format for debugging
+      System.out.println("Date string from getString(): [" + dateStr + "]");
+
+      // The driver returns date in "YYYY-MM-DD HH:MI:SS" format
+      // Timestamp.valueOf() can parse this format directly
+      Timestamp ts = Timestamp.valueOf(dateStr);
+
+      assertNotNull("Timestamp should not be null", ts);
+
+      // Verify the date components
+      java.util.Calendar cal = java.util.Calendar.getInstance();
+      cal.setTime(ts);
+      assertEquals("Year should be 2024", 2024, cal.get(java.util.Calendar.YEAR));
+      assertEquals("Month should be March (2)", 2, cal.get(java.util.Calendar.MONTH));
+      assertEquals("Day should be 15", 15, cal.get(java.util.Calendar.DAY_OF_MONTH));
+      assertEquals("Hour should be 0", 0, cal.get(java.util.Calendar.HOUR_OF_DAY));
+      assertEquals("Minute should be 0", 0, cal.get(java.util.Calendar.MINUTE));
+      assertEquals("Second should be 0", 0, cal.get(java.util.Calendar.SECOND));
+
+      rs.close();
+    } finally {
+      TestUtil.dropTable(con, "test_date_to_timestamp");
+      stmt.close();
+    }
+  }
+
 }
