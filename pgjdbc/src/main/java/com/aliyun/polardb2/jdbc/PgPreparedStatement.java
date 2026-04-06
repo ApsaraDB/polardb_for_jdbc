@@ -1520,6 +1520,12 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
       return;
     }
 
+    // POLAR: When clobAsText is enabled and x is PgClobText, use setString instead of LargeObject
+    if (connection.getClobAsText() && x instanceof PgClobText) {
+      setString(i, x.getSubString(1, (int) x.length()));
+      return;
+    }
+
     Reader inStream = x.getCharacterStream();
     int length = (int) x.length();
     LargeObjectManager lom = connection.getLargeObjectAPI();

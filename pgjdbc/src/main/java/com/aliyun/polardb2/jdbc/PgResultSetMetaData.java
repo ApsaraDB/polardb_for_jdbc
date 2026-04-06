@@ -454,6 +454,12 @@ public class PgResultSetMetaData implements ResultSetMetaData, PGResultSetMetaDa
       return "java.math.BigDecimal";
     }
 
+    // POLAR: When clobAsText is enabled, TEXT columns from actual table return PgClobText
+    // For literals (tableOid == 0), return String class name
+    if (connection.getClobAsText() && field.getOID() == Oid.TEXT && field.getTableOid() > 0) {
+      return "com.aliyun.polardb2.jdbc.PgClobText";
+    }
+
     if (result != null) {
       return result;
     }

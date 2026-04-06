@@ -241,8 +241,9 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
       case Types.CHAR:
       case Types.VARCHAR:
       case Types.LONGVARCHAR:
-        // POLAR: When clobAsText is true and field is text type, return Clob for Oracle compatibility
-        if (connection.getClobAsText() && field.getOID() == Oid.TEXT) {
+        // POLAR: When clobAsText is true and field is text type from an actual table column,
+        // return Clob for Oracle compatibility. For literals (tableOid == 0), return String.
+        if (connection.getClobAsText() && field.getOID() == Oid.TEXT && field.getTableOid() > 0) {
           return getClob(columnIndex);
         }
         return getString(columnIndex);

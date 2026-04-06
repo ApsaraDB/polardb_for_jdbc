@@ -460,10 +460,12 @@ public class Jdbc3CallableStatementTest extends BaseTest4 {
       cstmt.registerOutParameter(1, Types.LONGVARCHAR);
       cstmt.registerOutParameter(2, Types.LONGVARCHAR);
       cstmt.executeUpdate();
-      String val = (String) cstmt.getObject(1);
+      // POLAR: When clobAsText is enabled, getObject returns Clob for TEXT columns from tables
+      Object obj = cstmt.getObject(1);
+      String val = obj instanceof java.sql.Clob ? ((java.sql.Clob) obj).getSubString(1, (int) ((java.sql.Clob) obj).length()) : (String) obj;
       assertEquals("testdata", val);
-      val = (String) cstmt.getObject(2);
-      assertNull(val);
+      obj = cstmt.getObject(2);
+      assertNull(obj);
       cstmt.close();
       cstmt = con.prepareCall("{ call lvarchar_in_name(?) }");
       String maxFloat = "3.4E38";
@@ -473,7 +475,9 @@ public class Jdbc3CallableStatementTest extends BaseTest4 {
       Statement stmt = con.createStatement();
       ResultSet rs = stmt.executeQuery("select * from longvarchar_tab");
       assertTrue(rs.next());
-      String rval = (String) rs.getObject(1);
+      // POLAR: When clobAsText is enabled, getObject returns Clob for TEXT columns from tables
+      Object robj = rs.getObject(1);
+      String rval = robj instanceof java.sql.Clob ? ((java.sql.Clob) robj).getSubString(1, (int) ((java.sql.Clob) robj).length()) : (String) robj;
       assertEquals(rval.trim(), maxFloat.trim());
     } catch (Exception ex) {
       fail(ex.getMessage());
