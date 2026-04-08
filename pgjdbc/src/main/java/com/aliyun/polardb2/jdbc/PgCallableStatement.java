@@ -302,10 +302,16 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       return value;
     }
 
-    // POLAR: When the DB returns Types.OTHER (e.g. cross-package TABLE OF RECORD,
-    // composite types, or other unrecognized types), pass the value through as-is.
-    // The caller's getXXX() method will handle the actual conversion.
-    if (columnType == Types.OTHER || registeredType == Types.OTHER) {
+    // POLAR: When the DB returns Types.OTHER (e.g. DO block result, cross-package TABLE OF RECORD,
+    // composite types, or other unrecognized types), we should still try to convert the value
+    // to the registered type. The value is typically a String representation.
+    // For TABLE OF RECORD OUT parameters, we still pass through as-is.
+    if (columnType == Types.OTHER) {
+      // If value is a String, try to parse it to the registered type
+      if (value instanceof String && registeredType != Types.OTHER) {
+        return parseStringToType(value.toString(), registeredType);
+      }
+      // Otherwise pass through as-is (e.g., PGobject for composite types)
       return value;
     }
 
