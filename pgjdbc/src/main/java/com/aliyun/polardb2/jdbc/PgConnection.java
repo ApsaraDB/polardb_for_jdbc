@@ -201,6 +201,8 @@ public class PgConnection implements BaseConnection {
   private boolean collectWarning = true;
   // use bytea for BLOBs instead of Postgres LOs?
   private boolean blobAsBytea = false;
+  // output bytea as Oracle-style uppercase hex (AABBCC) instead of PG \xaabbcc?
+  private boolean blobUpperHex = true;
   // use text for CLOBs instead of Postgres LOs?
   private boolean clobAsText = false;
   private int defaultPolarMaxFetchSize;
@@ -526,6 +528,7 @@ public class PgConnection implements BaseConnection {
     this.autoCommitSpecCompliant = PGProperty.AUTO_COMMIT_SPEC_COMPLIANT.getBoolean(info);
     this.collectWarning = PGProperty.COLLECT_WARNING.getBoolean(info);
     this.blobAsBytea = PGProperty.BLOB_AS_BYTEA.getBoolean(info);
+    this.blobUpperHex = PGProperty.BLOB_UPPER_HEX.getBoolean(info);
     this.clobAsText = PGProperty.CLOB_AS_TEXT.getBoolean(info);
     this.defaultPolarMaxFetchSize = PGProperty.DEFAULT_POLAR_MAX_FETCH_SIZE.getIntNoCheck(info);
     this.boolAsInt = PGProperty.BOOL_AS_INT.getBoolean(info);
@@ -2213,6 +2216,11 @@ public class PgConnection implements BaseConnection {
   @Override
   public boolean getBlobAsBytea() {
     return blobAsBytea;
+  }
+
+  @Override
+  public boolean isBlobUpperHex() {
+    return blobUpperHex;
   }
 
   @Override

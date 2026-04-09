@@ -66,4 +66,59 @@ public class PgBlobByteaTest {
     Assert.assertEquals(1, blob.position("abcd12".getBytes(), 1));
   }
 
+  /**
+   * Test that getString() on a bytea/blob column returns Oracle-style uppercase hex (no \x prefix)
+   * when blobUpperHex=true (default).
+   */
+  @Test
+  public void testBlobGetStringOracleHex() throws Exception {
+    // Insert known binary data: bytes 0xDE, 0xAD, 0xBE, 0xEF
+    byte[] data = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xBE, (byte) 0xEF};
+    Blob blobin = new PgBlobBytea(data);
+
+    PreparedStatement pstmt1 = conn.prepareStatement("INSERT INTO blob_test(id, name) VALUES (?, ?)");
+    pstmt1.setInt(1, 2);
+    pstmt1.setObject(2, blobin);
+    pstmt1.execute();
+
+    // blobUpperHex=true (default): should return Oracle-style "DEADBEEF"
+    PreparedStatement pstmt2 = conn.prepareStatement("SELECT name FROM blob_test WHERE id = 2");
+    ResultSet rs = pstmt2.executeQuery();
+    Assert.assertTrue(rs.next());
+    String oracleHex = rs.getString(1);
+    Assert.assertEquals("getString() should return Oracle uppercase hex without \\x prefix",
+        "DEADBEEF", oracleHex);
+    rs.close();
+  }
+
+  /**
+   * Test that getString() on a bytea/blob column returns PG-style lowercase hex (\xdeadbeef)
+   * when blobUpperHex=false.
+   */
+  @Test
+  public void testBlobGetStringPgHex() throws Exception {
+    Properties props = new Properties();
+    props.put("blobAsBytea", "true");
+    props.put("blobUpperHex", "false");
+    try (Connection pgConn = TestUtil.openDB(props)) {
+      byte[] data = new byte[]{(byte) 0xDE, (byte) 0xAD, (byte) 0xBE, (byte) 0xEF};
+      Blob blobin = new PgBlobBytea(data);
+
+      PreparedStatement pstmt1 = pgConn.prepareStatement(
+          "INSERT INTO blob_test(id, name) VALUES (?, ?)");
+      pstmt1.setInt(1, 3);
+      pstmt1.setObject(2, blobin);
+      pstmt1.execute();
+
+      PreparedStatement pstmt2 = pgConn.prepareStatement(
+          "SELECT name FROM blob_test WHERE id = 3");
+      ResultSet rs = pstmt2.executeQuery();
+      Assert.assertTrue(rs.next());
+      String pgHex = rs.getString(1);
+      Assert.assertEquals("getString() should return PG lowercase hex with \\x prefix",
+          "\\xdeadbeef", pgHex);
+      rs.close();
+    }
+  }
+
 }

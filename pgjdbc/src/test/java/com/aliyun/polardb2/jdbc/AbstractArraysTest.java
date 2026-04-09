@@ -1092,6 +1092,14 @@ public abstract class AbstractArraysTest<A> {
      * {@inheritDoc}
      */
     @Override
+    public boolean isBlobUpperHex() {
+      return false;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public int defaultPolarMaxFetchSize() {
       return 0;
     }

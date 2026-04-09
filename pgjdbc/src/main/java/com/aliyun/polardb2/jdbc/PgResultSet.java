@@ -2394,7 +2394,14 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
 
     Encoding encoding = connection.getEncoding();
     try {
-      return trimString(columnIndex, encoding.decode(value));
+      String decoded = trimString(columnIndex, encoding.decode(value));
+      // POLAR: Convert bytea \xaabbcc format to Oracle-style AABBCC uppercase hex
+      if (decoded != null && connection.isBlobUpperHex()
+          && fields[columnIndex - 1].getOID() == Oid.BYTEA
+          && decoded.startsWith("\\x")) {
+        return decoded.substring(2).toUpperCase(Locale.ROOT);
+      }
+      return decoded;
     } catch (IOException ioe) {
       throw new PSQLException(
           GT.tr(

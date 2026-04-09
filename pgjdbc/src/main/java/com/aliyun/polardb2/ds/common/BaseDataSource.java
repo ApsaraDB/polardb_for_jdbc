@@ -1953,6 +1953,22 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
   }
 
   /**
+   * @return true iff outputting bytea as Oracle-style uppercase hex (AABBCC instead of \xaabbcc)
+   * @see PGProperty#BLOB_UPPER_HEX
+   */
+  public boolean getBlobUpperHex() {
+    return PGProperty.BLOB_UPPER_HEX.getBoolean(properties);
+  }
+
+  /**
+   * @param blobUpperHex use Oracle-style uppercase hex output for bytea getString()
+   * @see PGProperty#BLOB_UPPER_HEX
+   */
+  public void setBlobUpperHex(boolean blobUpperHex) {
+    PGProperty.BLOB_UPPER_HEX.set(properties, blobUpperHex);
+  }
+
+  /**
    * @return true iff using text for Clob API instead of LOs
    * @see PGProperty#CLOB_AS_TEXT
    */

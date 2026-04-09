@@ -306,6 +306,14 @@ public interface BaseConnection extends PGConnection, Connection {
   boolean getBlobAsBytea();
 
   /**
+   * Returns the blobUpperHex connection setting.
+   * When true, getString() on bytea columns returns uppercase hex without \x prefix (Oracle style).
+   *
+   * @return blobUpperHex setting
+   */
+  boolean isBlobUpperHex();
+
+  /**
    * Returns the defaultPolarMaxFetchSize connection setting.
    *
    * @return defaultPolarMaxFetchSize setting

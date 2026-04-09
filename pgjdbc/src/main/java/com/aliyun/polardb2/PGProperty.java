@@ -182,6 +182,18 @@ public enum PGProperty {
     new String[] {"true", "false"}),
 
   /**
+   * POLAR: Output bytea/blob getString() in Oracle hex format (uppercase, no \x prefix).
+   * When true, getString() on bytea columns returns "AABBCC" instead of "\xaabbcc".
+   * Default is true for Oracle compatibility.
+   */
+  BLOB_UPPER_HEX(
+    "blobUpperHex",
+    "true",
+    "Output bytea/blob as uppercase hex string (Oracle style) instead of PG \\x prefix format",
+    false,
+    new String[] {"true", "false"}),
+
+  /**
    * POLAR: Boolean used as Integer
    */
   BOOL_AS_INT(
