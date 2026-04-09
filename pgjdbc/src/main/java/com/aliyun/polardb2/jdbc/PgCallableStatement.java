@@ -12,6 +12,7 @@ import com.aliyun.polardb2.core.Oid;
 import com.aliyun.polardb2.core.ParameterList;
 import com.aliyun.polardb2.core.Query;
 import com.aliyun.polardb2.util.GT;
+import com.aliyun.polardb2.util.PGobject;
 import com.aliyun.polardb2.util.PSQLException;
 import com.aliyun.polardb2.util.PSQLState;
 
@@ -51,6 +52,9 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   // check the getXXX methods..
   private int @Nullable [] functionReturnType;
   private int @Nullable [] testReturn;
+  // POLAR: stores the type name provided to registerOutParameter(index, ARRAY, typeName)
+  // used when converting Types.OTHER String values back to the correct Array type
+  private @Nullable String @Nullable [] functionReturnTypeName;
   // returnTypeSet is true when a proper call to registerOutParameter has been made
   private boolean returnTypeSet;
   protected @Nullable Object @Nullable [] callResult;
@@ -91,6 +95,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       int arraySize = baseCount + 1;
       this.testReturn = new int[arraySize];
       this.functionReturnType = new int[arraySize];
+      this.functionReturnTypeName = new String[arraySize];
 
       // POLAR: main entry for call function
       // if server enable, pass function call as Oracle format
@@ -210,14 +215,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       if (isDoBlock) {
         /* POLAR: For DO anonymous blocks, result set columns correspond to $1, $2, ...
          * in sequential order. Map each column directly to its parameter index. */
+        String @Nullable [] functionReturnTypeName = this.functionReturnTypeName;
         for (int i = 0; i < cols; i++) {
           int paramIdx = i; // 0-based index into callResult
           callResult[paramIdx] = rs.getObject(i + 1);
           int columnType = rs.getMetaData().getColumnType(i + 1);
           int registeredType = functionReturnType[paramIdx];
+          String typeName = functionReturnTypeName != null ? functionReturnTypeName[paramIdx] : null;
           if (registeredType != 0 && columnType != registeredType) {
             try {
-              callResult[paramIdx] = convertOutParamValue(callResult[paramIdx], columnType, registeredType);
+              callResult[paramIdx] = convertOutParamValue(callResult[paramIdx], columnType,
+                  registeredType, typeName);
             } catch (PSQLException e) {
               throw new PSQLException(GT.tr(
                   "A CallableStatement function was executed and the out parameter {0} was of type {1} however type {2} was registered.",
@@ -228,6 +236,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
         }
       } else {
         // move them into the result set
+        String @Nullable [] functionReturnTypeName = this.functionReturnTypeName;
         for (int i = 0, j = 0; i < cols; i++, j++) {
           // find the next out parameter, the assumption is that the functionReturnType
           // array will be initialized with 0 and only out parameters will have values
@@ -239,11 +248,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
           callResult[j] = rs.getObject(i + 1);
           int columnType = rs.getMetaData().getColumnType(i + 1);
+          String typeName = functionReturnTypeName != null ? functionReturnTypeName[j] : null;
 
           if (columnType != functionReturnType[j]) {
             // POLAR: convert out parameter value between compatible types.
             try {
-              callResult[j] = convertOutParamValue(callResult[j], columnType, functionReturnType[j]);
+              callResult[j] = convertOutParamValue(callResult[j], columnType,
+                  functionReturnType[j], typeName);
             } catch (PSQLException e) {
               // re-throw with column index info
               throw new PSQLException(GT.tr(
@@ -288,11 +299,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
    * @param value        the raw value from the result set (may be null)
    * @param columnType   the actual SQL type returned by the database
    * @param registeredType the SQL type registered via registerOutParameter
+   * @param registeredTypeName the type name registered via registerOutParameter(index, ARRAY, name)
    * @return the converted value, or null if value is null
    * @throws PSQLException if no compatible conversion exists
    */
   private @Nullable Object convertOutParamValue(
-      @Nullable Object value, int columnType, int registeredType) throws PSQLException {
+      @Nullable Object value, int columnType, int registeredType,
+      @Nullable String registeredTypeName) throws PSQLException {
     if (value == null) {
       return null;
     }
@@ -305,8 +318,18 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     // POLAR: When the DB returns Types.OTHER (e.g. DO block result, cross-package TABLE OF RECORD,
     // composite types, or other unrecognized types), we should still try to convert the value
     // to the registered type. The value is typically a String representation.
-    // For TABLE OF RECORD OUT parameters, we still pass through as-is.
     if (columnType == Types.OTHER) {
+      // POLAR: If user registered as ARRAY and value is a String, wrap it as PgArray so that
+      // getArray() can cast it without ClassCastException.
+      if (registeredType == Types.ARRAY && value instanceof String) {
+        return buildPgArrayFromString(value.toString(), registeredTypeName);
+      }
+      // POLAR: If user registered as STRUCT and value is a String (DO block composite OUT param),
+      // wrap it as PGobject so that getObject() returns a usable composite value instead of
+      // a raw String.
+      if (registeredType == Types.STRUCT && value instanceof String) {
+        return buildPgObjectFromString(value.toString(), registeredTypeName);
+      }
       // If value is a String, try to parse it to the registered type
       if (value instanceof String && registeredType != Types.OTHER) {
         return parseStringToType(value.toString(), registeredType);
@@ -467,6 +490,58 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   /**
+   * POLAR: Wraps a String value returned by the DB (for a DO block ARRAY OUT parameter) into
+   * a PgArray so that getArray() can safely cast it.
+   *
+   * <p>When typeName is provided (e.g. "tab_fat_client_form"), the OID is resolved from the type
+   * registry. If the OID cannot be resolved, Oid.UNSPECIFIED is used so the caller can still
+   * parse the string representation.
+   */
+  private java.sql.Array buildPgArrayFromString(String fieldString,
+      @Nullable String typeName) throws PSQLException {
+    int oid = Oid.UNSPECIFIED;
+    if (typeName != null && !typeName.isEmpty()) {
+      try {
+        oid = connection.getTypeInfo().getPGType(typeName.toLowerCase(Locale.ROOT));
+        if (oid == Oid.UNSPECIFIED) {
+          oid = connection.getTypeInfo().getPGType(typeName);
+        }
+      } catch (SQLException e) {
+        // ignore: use UNSPECIFIED OID, PgArray will do its best to parse the string
+      }
+    }
+    try {
+      return new PgArray(connection, oid, fieldString);
+    } catch (SQLException e) {
+      throw new PSQLException(
+          GT.tr("Could not build Array from String value for type {0}", typeName),
+          PSQLState.DATA_TYPE_MISMATCH, e);
+    }
+  }
+
+  /**
+   * POLAR: Wraps a String value returned by the DB (for a DO block composite/STRUCT OUT parameter)
+   * into a PGobject so that getObject() returns a usable value instead of a raw String.
+   *
+   * <p>When typeName is provided (e.g. "cis.rec_fat_client_form"), it is set as the PGobject type.
+   * The string value (PostgreSQL composite literal, e.g. "(3001,FORM-X,99,AnswerX,2025-07-01)")
+   * is stored as the PGobject value.
+   */
+  private PGobject buildPgObjectFromString(String fieldString,
+      @Nullable String typeName) throws PSQLException {
+    try {
+      PGobject obj = new PGobject();
+      obj.setType(typeName != null && !typeName.isEmpty() ? typeName : "record");
+      obj.setValue(fieldString);
+      return obj;
+    } catch (SQLException e) {
+      throw new PSQLException(
+          GT.tr("Could not build composite type from String value for type {0}", typeName),
+          PSQLState.DATA_TYPE_MISMATCH, e);
+    }
+  }
+
+  /**
    * {@inheritDoc}
    *
    * <p>Before executing a stored procedure call you must explicitly call registerOutParameter to
@@ -582,6 +657,12 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     // check the getXXX methods..
     functionReturnType[parameterIndex - 1] = sqlType;
     testReturn[parameterIndex - 1] = sqlType;
+
+    // POLAR: store type name for ARRAY OUT parameters (needed to reconstruct PgArray from String)
+    String @Nullable [] functionReturnTypeName = this.functionReturnTypeName;
+    if (functionReturnTypeName != null) {
+      functionReturnTypeName[parameterIndex - 1] = typeName;
+    }
 
     if (functionReturnType[parameterIndex - 1] == Types.CHAR
         || functionReturnType[parameterIndex - 1] == Types.LONGVARCHAR) {
