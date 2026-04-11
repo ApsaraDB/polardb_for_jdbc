@@ -2016,6 +2016,14 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
     PGProperty.BIGINT_AS_NUMERIC.set(properties, bigintAsNumeric);
   }
 
+  public boolean getNumberStripTrailingZeros() {
+    return PGProperty.NUMBER_STRIP_TRAILING_ZEROS.getBoolean(properties);
+  }
+
+  public void setNumberStripTrailingZeros(boolean numberStripTrailingZeros) {
+    PGProperty.NUMBER_STRIP_TRAILING_ZEROS.set(properties, numberStripTrailingZeros);
+  }
+
   public boolean getBoolAsInt() {
     return PGProperty.BOOL_AS_INT.getBoolean(properties);
   }

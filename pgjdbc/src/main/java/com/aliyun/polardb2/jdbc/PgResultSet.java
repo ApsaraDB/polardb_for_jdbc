@@ -2372,6 +2372,11 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
       if ("hstore".equals(getPGType(columnIndex))) {
         return HStoreConverter.toString((Map<?, ?>) obj);
       }
+      // POLAR: Strip trailing zeros from NUMERIC/DECIMAL for Oracle-like NUMBER display
+      if (obj instanceof BigDecimal && connection.isNumberStripTrailingZeros()) {
+        return trimString(columnIndex,
+            ((BigDecimal) obj).stripTrailingZeros().toPlainString());
+      }
       return trimString(columnIndex, obj.toString());
     }
 
@@ -2400,6 +2405,11 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
           && fields[columnIndex - 1].getOID() == Oid.BYTEA
           && decoded.startsWith("\\x")) {
         return decoded.substring(2).toUpperCase(Locale.ROOT);
+      }
+      // POLAR: Strip trailing zeros from NUMERIC/DECIMAL for Oracle-like NUMBER display
+      if (decoded != null && connection.isNumberStripTrailingZeros()
+          && fields[columnIndex - 1].getOID() == Oid.NUMERIC) {
+        return stripTrailingZeros(decoded);
       }
       return decoded;
     } catch (IOException ioe) {
@@ -3202,6 +3212,29 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
     }
 
     return s;
+  }
+
+  /**
+   * POLAR: Strip trailing zeros from a numeric string.
+   * For example, "911.000" becomes "911", "3.10" becomes "3.1", "100" stays "100".
+   *
+   * @param s the numeric string
+   * @return the string with trailing zeros removed
+   */
+  private static String stripTrailingZeros(String s) {
+    int dotIndex = s.indexOf('.');
+    if (dotIndex < 0) {
+      return s;
+    }
+    int end = s.length() - 1;
+    while (end > dotIndex && s.charAt(end) == '0') {
+      end--;
+    }
+    if (end == dotIndex) {
+      // all decimals were zeros, remove the dot too
+      return s.substring(0, dotIndex);
+    }
+    return s.substring(0, end + 1);
   }
 
   @Pure

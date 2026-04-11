@@ -545,6 +545,18 @@ public enum PGProperty {
       new String[]{"true", "false"}),
 
   /**
+   * POLAR: Strip trailing zeros from NUMERIC/DECIMAL values when converting to string.
+   * When enabled, values like 911.000 will be displayed as 911, similar to Oracle NUMBER behavior.
+   * Default is true.
+   */
+  NUMBER_STRIP_TRAILING_ZEROS(
+      "numberStripTrailingZeros",
+      "true",
+      "Strip trailing zeros from NUMERIC/DECIMAL string representation (e.g. 911.000 -> 911).",
+      false,
+      new String[] {"true", "false"}),
+
+  /**
    * Specify 'options' connection initialization parameter.
    * The value of this parameter may contain spaces and other special characters or their URL representation.
    */

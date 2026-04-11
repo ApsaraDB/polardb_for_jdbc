@@ -209,6 +209,7 @@ public class PgConnection implements BaseConnection {
   private PolarDriverPrefix driverPrefix = PolarDriverPrefix.POLARDB;
   private boolean boolAsInt = false;
   private boolean bigintAsNumeric = false;
+  private boolean numberStripTrailingZeros = true;
   private boolean commentStyle = false;
   private boolean callFunctionMode = false;
   private boolean forceDriverType = false;
@@ -533,6 +534,7 @@ public class PgConnection implements BaseConnection {
     this.defaultPolarMaxFetchSize = PGProperty.DEFAULT_POLAR_MAX_FETCH_SIZE.getIntNoCheck(info);
     this.boolAsInt = PGProperty.BOOL_AS_INT.getBoolean(info);
     this.bigintAsNumeric = PGProperty.BIGINT_AS_NUMERIC.getBoolean(info);
+    this.numberStripTrailingZeros = PGProperty.NUMBER_STRIP_TRAILING_ZEROS.getBoolean(info);
     this.callFunctionMode = PGProperty.CALL_FUNCTION_MODE.getBoolean(info);
     this.forceDriverType = PGProperty.FORCE_DRIVER_TYPE.getBoolean(info);
     this.allowSelectInExecuteUpdate = PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.getBoolean(info);
@@ -2169,6 +2171,11 @@ public class PgConnection implements BaseConnection {
   @Override
   public boolean isBigintAsNumeric() {
     return bigintAsNumeric;
+  }
+
+  @Override
+  public boolean isNumberStripTrailingZeros() {
+    return numberStripTrailingZeros;
   }
 
   @Override

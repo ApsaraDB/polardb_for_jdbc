@@ -1151,5 +1151,13 @@ public abstract class AbstractArraysTest<A> {
     public boolean isBigintAsNumeric() {
       return false;
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean isNumberStripTrailingZeros() {
+      return true;
+    }
   }
 }

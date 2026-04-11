@@ -348,6 +348,13 @@ public interface BaseConnection extends PGConnection, Connection {
   boolean isBigintAsNumeric();
 
   /**
+   * Returns isNumberStripTrailingZeros connection setting.
+   *
+   * @return isNumberStripTrailingZeros setting
+   */
+  boolean isNumberStripTrailingZeros();
+
+  /**
    * Returns isBoolAsInt connection setting.
    *
    * @return isBoolAsInt setting
