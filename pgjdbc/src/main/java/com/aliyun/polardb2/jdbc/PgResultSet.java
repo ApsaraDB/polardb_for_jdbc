@@ -225,14 +225,16 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
         // because PostgreSQL has no "oid = numeric" operator and using BigDecimal for OID
         // would break WHERE clause in updateRow() etc.
         if (connection.isBigintAsNumeric() && field.getOID() != Oid.OID) {
-          return getNumeric(columnIndex,
+          Number bigintNum = getNumeric(columnIndex,
               (field.getMod() == -1) ? -1 : ((field.getMod() - 4) & 0xffff), true);
+          return stripTrailingZerosIfEnabled(bigintNum);
         }
         return getLong(columnIndex);
       case Types.NUMERIC:
       case Types.DECIMAL:
-        return getNumeric(columnIndex,
+        Number num = getNumeric(columnIndex,
             (field.getMod() == -1) ? -1 : ((field.getMod() - 4) & 0xffff), true);
+        return stripTrailingZerosIfEnabled(num);
       case Types.REAL:
         return getFloat(columnIndex);
       case Types.FLOAT:
@@ -3235,6 +3237,26 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
       return s.substring(0, dotIndex);
     }
     return s.substring(0, end + 1);
+  }
+
+  /**
+   * POLAR: Strip trailing zeros from a BigDecimal Number if numberStripTrailingZeros is enabled.
+   * This is used by getObject() path to ensure BigDecimal values like 6103.00 become 6103.
+   *
+   * @param num the Number returned by getNumeric()
+   * @return the Number with trailing zeros stripped if applicable
+   */
+  private @Nullable Number stripTrailingZerosIfEnabled(@Nullable Number num) {
+    if (num instanceof BigDecimal && connection.isNumberStripTrailingZeros()) {
+      BigDecimal stripped = ((BigDecimal) num).stripTrailingZeros();
+      // stripTrailingZeros on values like 1000 produces 1E+3 (negative scale),
+      // which causes toString() to output scientific notation. Fix by resetting scale to 0.
+      if (stripped.scale() < 0) {
+        stripped = stripped.setScale(0);
+      }
+      return stripped;
+    }
+    return num;
   }
 
   @Pure

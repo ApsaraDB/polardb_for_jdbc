@@ -5,6 +5,7 @@
 package com.aliyun.polardb2.test.polarora;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -14,6 +15,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -186,5 +188,119 @@ public class NumberStripTrailingZerosTest {
       rs.close();
       stmt.close();
     }
+  }
+
+  /**
+   * Test getObject() returns BigDecimal with trailing zeros stripped.
+   * This simulates the Spring queryForList() scenario where getObject() is used.
+   */
+  @Test
+  public void testGetObjectStripsTrailingZeros() throws Exception {
+    Statement stmt = connEnabled.createStatement();
+    ResultSet rs = stmt.executeQuery(
+        "SELECT val FROM test_num_strip ORDER BY id");
+
+    // id=1: 911.00000 -> BigDecimal("911")
+    assertTrue(rs.next());
+    Object obj1 = rs.getObject(1);
+    assertNotNull(obj1);
+    assertTrue("getObject should return BigDecimal", obj1 instanceof BigDecimal);
+    BigDecimal bd1 = (BigDecimal) obj1;
+    assertEquals("BigDecimal scale should be 0 after stripping", 0, bd1.scale());
+    assertEquals("911.000 getObject should be 911",
+        new BigDecimal("911"), bd1);
+    assertEquals("BigDecimal toString should not have trailing zeros",
+        "911", bd1.toPlainString());
+
+    // id=2: 3.10000 -> BigDecimal("3.1")
+    assertTrue(rs.next());
+    Object obj2 = rs.getObject(1);
+    assertTrue(obj2 instanceof BigDecimal);
+    BigDecimal bd2 = (BigDecimal) obj2;
+    assertEquals("3.10 getObject should be 3.1",
+        new BigDecimal("3.1"), bd2);
+    assertEquals("3.1", bd2.toPlainString());
+
+    // id=3: 100.00000 -> BigDecimal("1E+2") after stripTrailingZeros
+    assertTrue(rs.next());
+    Object obj3 = rs.getObject(1);
+    assertTrue(obj3 instanceof BigDecimal);
+    BigDecimal bd3 = (BigDecimal) obj3;
+    assertEquals("100 value should match",
+        0, new BigDecimal("100").compareTo(bd3));
+    // toPlainString always gives "100" even if internal representation is 1E+2
+    assertEquals("100", bd3.toPlainString());
+
+    // id=4: 0.50000 -> BigDecimal("0.5")
+    assertTrue(rs.next());
+    Object obj4 = rs.getObject(1);
+    assertTrue(obj4 instanceof BigDecimal);
+    assertEquals(new BigDecimal("0.5"), (BigDecimal) obj4);
+    assertEquals("0.5", ((BigDecimal) obj4).toPlainString());
+
+    // id=5: 123.45600 -> BigDecimal("123.456")
+    assertTrue(rs.next());
+    Object obj5 = rs.getObject(1);
+    assertTrue(obj5 instanceof BigDecimal);
+    assertEquals(new BigDecimal("123.456"), (BigDecimal) obj5);
+
+    // id=6: 0.00000 -> BigDecimal("0")
+    assertTrue(rs.next());
+    Object obj6 = rs.getObject(1);
+    assertTrue(obj6 instanceof BigDecimal);
+    BigDecimal bd6 = (BigDecimal) obj6;
+    assertEquals("0.00 getObject should be 0",
+        BigDecimal.ZERO.compareTo(bd6), 0);
+    assertFalse("toString should not contain '.'",
+        bd6.toPlainString().contains("."));
+
+    rs.close();
+    stmt.close();
+  }
+
+  /**
+   * Test getObject() does NOT strip trailing zeros when feature is disabled.
+   */
+  @Test
+  public void testGetObjectPreservesZerosWhenDisabled() throws Exception {
+    Statement stmt = connDisabled.createStatement();
+    ResultSet rs = stmt.executeQuery(
+        "SELECT val FROM test_num_strip WHERE id = 1");
+
+    assertTrue(rs.next());
+    Object obj = rs.getObject(1);
+    assertNotNull(obj);
+    assertTrue(obj instanceof BigDecimal);
+    BigDecimal bd = (BigDecimal) obj;
+    // With strip disabled, scale should be preserved (5 for numeric(20,5))
+    assertTrue("With strip disabled, BigDecimal should have scale > 0",
+        bd.scale() > 0);
+
+    rs.close();
+    stmt.close();
+  }
+
+  /**
+   * Test getObject() with expressions (COUNT, SUM) also strips trailing zeros.
+   * This is common in Spring/MyBatis queryForList scenarios.
+   */
+  @Test
+  public void testGetObjectWithAggregateExpressions() throws Exception {
+    Statement stmt = connEnabled.createStatement();
+
+    // SUM returns numeric with trailing zeros
+    ResultSet rs = stmt.executeQuery(
+        "SELECT SUM(val) FROM test_num_strip WHERE id IN (1, 3)");
+    assertTrue(rs.next());
+    Object sumObj = rs.getObject(1);
+    assertNotNull(sumObj);
+    assertTrue(sumObj instanceof BigDecimal);
+    BigDecimal sumBd = (BigDecimal) sumObj;
+    // 911 + 100 = 1011, should have no trailing zeros
+    assertEquals("SUM should strip trailing zeros",
+        "1011", sumBd.toPlainString());
+
+    rs.close();
+    stmt.close();
   }
 }
