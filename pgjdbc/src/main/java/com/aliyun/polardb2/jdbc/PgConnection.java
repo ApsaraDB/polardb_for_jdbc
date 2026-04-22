@@ -1539,7 +1539,7 @@ public class PgConnection implements BaseConnection {
       return makeArray(oid, null);
     }
 
-    /* POLAR DIFF: Handle Object[][] for composite array types (TABLE OF).
+    /* POLAR DIFF: Handle Object[][] / Object[]{Object[],...} for composite array types (TABLE OF).
      *
      * OracleArrayParameter.getOracleArray(conn) builds Object[][] where each
      * inner Object[] represents the fields of a composite record, then calls
@@ -1551,14 +1551,30 @@ public class PgConnection implements BaseConnection {
      * causing "value too long for type character varying(8 byte)" errors
      * when the first field is exactly at its length limit.
      *
-     * Fix: Detect Object[][] with STRUCT element type and convert each inner
-     * Object[] to a properly formatted record literal (val1,val2,...). */
+     * Additionally, when List<Object[]>.toArray() produces Object[] (not
+     * Object[][]) whose runtime elements are Object[] arrays, isObjectArray2D
+     * returns false because the compile-time component type is Object, not
+     * Object[].  OBJECT_ARRAY then wraps each inner Object[] with braces
+     * instead of parentheses, and fixCompositeArrayElements cannot repair
+     * the nested-brace structure.  We detect this case at runtime and convert
+     * to Object[][] before delegating to buildCompositeArrayFromObject2D.
+     *
+     * Fix: Detect Object[][] (static) or Object[]{Object[],...} (runtime)
+     * with STRUCT element type and convert each inner Object[] to a properly
+     * formatted record literal (val1,val2,...). */
     int elemOid = typeInfo.getPGArrayElement(oid);
     if (elemOid != Oid.UNSPECIFIED) {
       int elemSqlType = typeInfo.getSQLType(elemOid);
-      if (elemSqlType == Types.STRUCT && isObjectArray2D(elements)) {
-        String arrayString = buildCompositeArrayFromObject2D((Object[][]) elements, delim);
-        return makeArray(oid, arrayString);
+      if (elemSqlType == Types.STRUCT) {
+        if (isObjectArray2D(elements)) {
+          String arrayString = buildCompositeArrayFromObject2D((Object[][]) elements, delim);
+          return makeArray(oid, arrayString);
+        }
+        Object[][] converted = tryConvertToObjectArray2D(elements);
+        if (converted != null) {
+          String arrayString = buildCompositeArrayFromObject2D(converted, delim);
+          return makeArray(oid, arrayString);
+        }
       }
     }
     /* POLAR DIFF end */
@@ -1605,6 +1621,52 @@ public class PgConnection implements BaseConnection {
     // Check if it's Object[][] (inner arrays are Object[])
     Class<?> innerComponentType = componentType.getComponentType();
     return innerComponentType != null && Object.class.equals(innerComponentType);
+  }
+
+  /**
+   * POLAR: Try to convert Object[] whose runtime elements are Object[] arrays
+   * into Object[][] for composite record processing.
+   *
+   * <p>This handles the case where {@code List<Object[]>.toArray()} produces
+   * {@code Object[]} (compile-time component type = Object) instead of
+   * {@code Object[][]}. The static type check in {@link #isObjectArray2D}
+   * misses this because the Java class is Object[], not Object[][].
+   *
+   * @return Object[][] if conversion is possible, null otherwise
+   */
+  private Object @Nullable [][] tryConvertToObjectArray2D(@Nullable Object obj) {
+    if (obj == null) {
+      return null;
+    }
+    if (!(obj instanceof Object[])) {
+      return null;
+    }
+    Object[] outer = (Object[]) obj;
+    if (outer.length == 0) {
+      return null;
+    }
+    // Check that at least the first non-null element is Object[]
+    boolean hasArrayElement = false;
+    for (Object elem : outer) {
+      if (elem == null) {
+        continue;
+      }
+      if (elem instanceof Object[]) {
+        hasArrayElement = true;
+      } else {
+        // Mixed types or non-array elements — not a composite array scenario
+        return null;
+      }
+    }
+    if (!hasArrayElement) {
+      return null;
+    }
+    // Convert to Object[][]
+    Object[][] result = new Object[outer.length][];
+    for (int i = 0; i < outer.length; i++) {
+      result[i] = (Object[]) outer[i];
+    }
+    return result;
   }
 
   /**
