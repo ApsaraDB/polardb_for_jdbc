@@ -2717,7 +2717,8 @@ public class QueryExecutorImpl extends QueryExecutorBase {
       int typeModifier = pgStream.receiveInteger4();
       int formatType = pgStream.receiveInteger2();
 
-      /* POLAR DIFF: map sys.date to timestamp */
+      /* POLAR DIFF: map sys.date to timestamp, preserve original OID */
+      int originalTypeOid = typeOid;
       if (mapDateToTimeStamp) {
         typeOid = polarMapTypeOid(typeOid);
       }
@@ -2726,6 +2727,9 @@ public class QueryExecutorImpl extends QueryExecutorBase {
       fields[i] = new Field(columnLabel,
           typeOid, typeLength, typeModifier, tableOid, positionInTable);
       fields[i].setFormat(formatType);
+      if (originalTypeOid != typeOid) {
+        fields[i].setOriginalOid(originalTypeOid);
+      }
 
       LOGGER.log(Level.FINEST, "        {0}", fields[i]);
     }

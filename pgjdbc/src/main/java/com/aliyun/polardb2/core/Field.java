@@ -22,6 +22,9 @@ public class Field {
   private final int mod; // type modifier of this field
   private String columnLabel; // Column label
 
+  /* POLAR DIFF: preserve the original type OID before any mapping (e.g. ORADATE -> TIMESTAMP) */
+  private int originalOid;
+
   private int format = TEXT_FORMAT; // In the V3 protocol each field has a format
   // 0 = text, 1 = binary
   // In the V2 protocol all fields in a
@@ -90,6 +93,23 @@ public class Field {
   public int getOID() {
     return oid;
   }
+
+  /* POLAR DIFF: original OID before type mapping */
+  /**
+   * @return the original OID before any type mapping, or 0 if no mapping was applied
+   */
+  public int getOriginalOid() {
+    return originalOid;
+  }
+
+  /**
+   * Set the original OID before type mapping.
+   * @param originalOid the original type OID
+   */
+  public void setOriginalOid(int originalOid) {
+    this.originalOid = originalOid;
+  }
+  /* POLAR end */
 
   /**
    * @return the mod of this Field's data type

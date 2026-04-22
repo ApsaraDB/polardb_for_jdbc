@@ -52,6 +52,9 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   // check the getXXX methods..
   private int @Nullable [] functionReturnType;
   private int @Nullable [] testReturn;
+  /* POLAR DIFF: track the original SQL type before DATE->TIMESTAMP mapping
+   * so that getObject() can return java.sql.Date when user explicitly registered Types.DATE */
+  private int @Nullable [] userRegisteredType;
   // POLAR: stores the type name provided to registerOutParameter(index, ARRAY, typeName)
   // used when converting Types.OTHER String values back to the correct Array type
   private @Nullable String @Nullable [] functionReturnTypeName;
@@ -96,6 +99,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       this.testReturn = new int[arraySize];
       this.functionReturnType = new int[arraySize];
       this.functionReturnTypeName = new String[arraySize];
+      this.userRegisteredType = new int[arraySize];
 
       // POLAR: main entry for call function
       // if server enable, pass function call as Oracle format
@@ -600,9 +604,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       case Types.BOOLEAN:
         sqlType = Types.BIT;
         break;
-      /* POLAR DIFF: map date to timestamp */
+      /* POLAR DIFF: map date to timestamp, but remember the original type */
       case Types.DATE:
         if (connection.isMapDateToTimestamp()) {
+          int[] userReg = this.userRegisteredType;
+          if (userReg != null) {
+            userReg[parameterIndex - 1] = Types.DATE;
+          }
           sqlType = Types.TIMESTAMP;
         }
         break;
@@ -903,7 +911,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public @Nullable Object getObject(@Positive int parameterIndex) throws SQLException {
-    return getCallResult(parameterIndex);
+    Object result = getCallResult(parameterIndex);
+    /* POLAR DIFF: When user explicitly registered Types.DATE, convert Timestamp to java.sql.Date.
+     * For table SELECT queries, ORADATE getObject() still returns Timestamp (Oracle behavior). */
+    int[] userReg = this.userRegisteredType;
+    if (result instanceof Timestamp && userReg != null
+        && parameterIndex > 0 && parameterIndex <= userReg.length
+        && userReg[parameterIndex - 1] == Types.DATE) {
+      return new java.sql.Date(((Timestamp) result).getTime());
+    }
+    /* POLAR DIFF end */
+    return result;
   }
 
   /**
