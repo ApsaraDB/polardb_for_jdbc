@@ -1093,7 +1093,27 @@ final class ArrayEncoding {
                 recordSb.append(',');
               }
               if (attributes[j] != null) {
-                recordSb.append(attributes[j].toString());
+                /* POLAR DIFF: Quote string fields that contain commas / quotes /
+                 * parentheses / backslashes / whitespace.  Without quoting, a
+                 * value like "ADDRESS 3, ADDRESS 2, ADDRESS1" would inject extra
+                 * commas into the composite literal, shifting subsequent fields
+                 * into the wrong columns.  In PostgreSQL composite type literals,
+                 * embedded double quotes and backslashes are doubled. */
+                String strVal = attributes[j].toString();
+                if (needsRecordQuoting(strVal)) {
+                  recordSb.append('"');
+                  for (int k = 0; k < strVal.length(); k++) {
+                    char c = strVal.charAt(k);
+                    if (c == '"' || c == '\\') {
+                      recordSb.append(c);  // double the character
+                    }
+                    recordSb.append(c);
+                  }
+                  recordSb.append('"');
+                } else {
+                  recordSb.append(strVal);
+                }
+                /* POLAR DIFF end */
               }
               // null → leave empty (no output between commas) for correct
               // PostgreSQL composite type literal syntax: (val1,,val3) means val2 is NULL
@@ -1152,6 +1172,30 @@ final class ArrayEncoding {
       sb.append('}');
     }
   };
+
+  /* POLAR DIFF: Determines whether a field value inside a PostgreSQL
+   * composite type literal must be wrapped in double quotes.  Values that
+   * contain commas, parentheses, double quotes, backslashes or leading /
+   * trailing whitespace must be quoted, otherwise the server would split
+   * the literal incorrectly (e.g. treat an embedded comma as a field
+   * delimiter, shifting subsequent values into the wrong columns). */
+  private static boolean needsRecordQuoting(String s) {
+    if (s.isEmpty()) {
+      return true;
+    }
+    if (Character.isWhitespace(s.charAt(0))
+        || Character.isWhitespace(s.charAt(s.length() - 1))) {
+      return true;
+    }
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == ',' || c == '(' || c == ')' || c == '"' || c == '\\') {
+        return true;
+      }
+    }
+    return false;
+  }
+  /* POLAR DIFF end */
 
   @SuppressWarnings("rawtypes")
   private static final Map<Class, AbstractArrayEncoder> ARRAY_CLASS_TO_ENCODER = new HashMap<Class, AbstractArrayEncoder>(
