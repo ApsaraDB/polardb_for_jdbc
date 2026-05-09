@@ -112,7 +112,13 @@ public class Parser {
       keywordEnd = i; // parseSingleQuotes, parseDoubleQuotes, etc move index so we keep old value
       switch (aChar) {
         case '\'': // single-quotes
-          i = Parser.parseSingleQuotes(aChars, i, standardConformingStrings);
+          /* POLAR DIFF: honor Oracle q-quote literals q'[...]', q'(...)', etc. */
+          if (Parser.isQQuoteStart(aChars, i)) {
+            i = Parser.parseQQuote(aChars, i);
+          } else {
+            i = Parser.parseSingleQuotes(aChars, i, standardConformingStrings);
+          }
+          /* POLAR DIFF end */
           break;
 
         case '"': // double-quotes
@@ -605,6 +611,91 @@ public class Parser {
     }
     return res;
   }
+
+  /* POLAR DIFF: Oracle alternative quoting mechanism (q-quote) support.
+   *
+   * Oracle allows an alternative string literal syntax q'X...X' or Q'X...X'
+   * where X is a user-chosen start delimiter and the literal ends at the
+   * matching end delimiter followed by a single quote.  Paired delimiters:
+   *   [ ↔ ]   ( ↔ )   { ↔ }   < ↔ >
+   * Any other non-whitespace, non-quote character pairs with itself.
+   *
+   * Inside a q-quote literal the characters ', ? and :name must be treated
+   * as literal characters, NOT as string terminators or bind/named parameter
+   * markers.
+   */
+  /**
+   * Tests whether {@code query[offset]} (which must be a {@code '}) is the
+   * opening quote of an Oracle q-quote literal.  True when the preceding
+   * character is {@code q} or {@code Q}, it is itself preceded by an
+   * identifier-terminating character (or start of query), and the character
+   * after the opening quote is a valid q-quote start delimiter (anything
+   * other than whitespace or {@code '}).
+   *
+   * @param query  the query characters
+   * @param offset position of the opening {@code '}
+   * @return {@code true} if a q-quote literal starts at {@code offset}
+   */
+  public static boolean isQQuoteStart(final char[] query, int offset) {
+    if (offset < 1 || offset + 1 >= query.length) {
+      return false;
+    }
+    char prev = query[offset - 1];
+    if (prev != 'q' && prev != 'Q') {
+      return false;
+    }
+    if (offset >= 2 && !charTerminatesIdentifier(query[offset - 2])) {
+      return false;
+    }
+    char delim = query[offset + 1];
+    return !Character.isWhitespace(delim) && delim != '\'';
+  }
+
+  /**
+   * Find the end of an Oracle q-quote literal.  The caller MUST have verified
+   * via {@link #isQQuoteStart(char[], int)} that {@code query[offset]} is the
+   * opening {@code '} of a q-quote literal.
+   *
+   * <p>Returns the position of the closing {@code '}, i.e. the quote that
+   * immediately follows the matching end delimiter.  If the literal is not
+   * terminated, returns {@code query.length}.
+   *
+   * @param query  the query characters
+   * @param offset position of the opening {@code '}
+   * @return position of the closing {@code '}, or {@code query.length} if the
+   *         literal is not terminated
+   */
+  public static int parseQQuote(final char[] query, int offset) {
+    char open = query[offset + 1];
+    char close;
+    switch (open) {
+      case '[':
+        close = ']';
+        break;
+      case '(':
+        close = ')';
+        break;
+      case '{':
+        close = '}';
+        break;
+      case '<':
+        close = '>';
+        break;
+      default:
+        close = open;
+        break;
+    }
+    // Scan from just after the start delimiter for the closing <close>' pair
+    int i = offset + 2;
+    while (i < query.length - 1) {
+      if (query[i] == close && query[i + 1] == '\'') {
+        return i + 1;
+      }
+      i++;
+    }
+    return query.length;
+  }
+  /* POLAR DIFF end */
 
   /**
    * <p>Find the end of the single-quoted string starting at the given offset.</p>
@@ -1674,7 +1765,13 @@ public class Parser {
           } else if (c == '\'') {
             // start of a string?
             int i0 = i;
-            i = parseSingleQuotes(sql, i, stdStrings);
+            /* POLAR DIFF: honor Oracle q-quote literals q'[...]', q'(...)', etc. */
+            if (isQQuoteStart(sql, i)) {
+              i = parseQQuote(sql, i);
+            } else {
+              i = parseSingleQuotes(sql, i, stdStrings);
+            }
+            /* POLAR DIFF end */
             checkParsePosition(i, len, i0, sql,
                 "Unterminated string literal started at position {0} in SQL {1}. Expected ' char");
             newsql.append(sql, i0, i - i0 + 1);
