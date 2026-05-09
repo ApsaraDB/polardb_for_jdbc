@@ -361,6 +361,16 @@ public class PgResultSetMetaData implements ResultSetMetaData, PGResultSetMetaDa
       return "blob";
     }
 
+    /* POLAR DIFF: For Oracle-compatible DATE columns, the driver maps ORADATE
+     * to TIMESTAMP so that getColumnType() returns Types.TIMESTAMP (93),
+     * matching Oracle JDBC behavior.  However, Oracle JDBC simultaneously
+     * reports "DATE" as the column type name.  Preserve that contract by
+     * returning "date" whenever the field's original OID is ORADATE. */
+    if (getField(column).getOriginalOid() == Oid.ORADATE) {
+      return "date";
+    }
+    /* POLAR DIFF end */
+
     return castNonNull(type);
   }
 

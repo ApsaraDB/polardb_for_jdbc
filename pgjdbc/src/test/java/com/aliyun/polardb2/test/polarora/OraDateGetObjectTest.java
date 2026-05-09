@@ -288,6 +288,34 @@ public class OraDateGetObjectTest {
   }
 
   /**
+   * Oracle JDBC contract: for a DATE column,
+   * {@link ResultSetMetaData#getColumnType(int)} returns {@link Types#TIMESTAMP}
+   * (93), while {@link ResultSetMetaData#getColumnTypeName(int)} still returns
+   * {@code "date"}.  Verify the PolarDB driver preserves this dual contract,
+   * and that a genuine {@code timestamp} column is NOT affected.
+   */
+  @Test
+  public void testColumnTypeNameIsDateForOraDate() throws SQLException {
+    ResultSet rs = stmt.executeQuery(
+        "SELECT d, ts FROM test_oradate_getobj WHERE id = 1");
+    ResultSetMetaData meta = rs.getMetaData();
+
+    // ORADATE column: type code = TIMESTAMP(93), type name = "date"
+    assertEquals("ORADATE getColumnType should be TIMESTAMP(93)",
+        Types.TIMESTAMP, meta.getColumnType(1));
+    assertEquals("ORADATE getColumnTypeName should be 'date'",
+        "date", meta.getColumnTypeName(1));
+
+    // Regular TIMESTAMP column: unaffected by the override
+    assertEquals("TIMESTAMP getColumnType should be TIMESTAMP(93)",
+        Types.TIMESTAMP, meta.getColumnType(2));
+    assertEquals("TIMESTAMP getColumnTypeName should be 'timestamp'",
+        "timestamp", meta.getColumnTypeName(2));
+
+    rs.close();
+  }
+
+  /**
    * Comparison: regular TIMESTAMP column getObject() returns Timestamp.
    */
   @Test
