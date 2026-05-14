@@ -194,6 +194,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
        * in order. Skip the outParameterCount check since DO blocks do not use
        * preparedParameters.registerOutParameter.
        * Similarly, for sequence pseudocolumns, no ? placeholder was registered; skip the check. */
+      int extraOutColumns = 0;
       if (!isDoBlock && !isSequencePseudocol) {
         int outParameterCount = preparedParameters.getOutParameterCount();
 
@@ -201,10 +202,24 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
         // This handles cases where an IN parameter is incorrectly registered as OUT parameter.
         // The database only returns actual OUT parameters in the result set,
         // but user may register more parameters as OUT than actual OUT parameters.
+        //
+        // POLAR: Also allow execution when cols > outParameterCount.
+        // This handles cases where an IN OUT parameter was only setXxx() (as IN) but the
+        // caller forgot to registerOutParameter() for it. The server still returns the
+        // INOUT parameter as an OUT column, so cols exceeds outParameterCount. We absorb
+        // the surplus columns into the unregistered slots in parameter order; callers that
+        // never registered them simply won't fetch the value via getXxx().
+        // The total ? placeholder count guards against an unbounded surplus:
+        // (parameterCount - outParameterCount) is the number of unregistered slots, so
+        // surplus columns beyond that are still rejected as truly invalid.
         if (cols > outParameterCount) {
-          throw new PSQLException(
-              GT.tr("A CallableStatement was executed with an invalid number of parameters"),
-              PSQLState.SYNTAX_ERROR);
+          int unregisteredSlots = preparedParameters.getParameterCount() - outParameterCount;
+          if (cols - outParameterCount > unregisteredSlots) {
+            throw new PSQLException(
+                GT.tr("A CallableStatement was executed with an invalid number of parameters"),
+                PSQLState.SYNTAX_ERROR);
+          }
+          extraOutColumns = cols - outParameterCount;
         }
       }
 
@@ -241,20 +256,39 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       } else {
         // move them into the result set
         String @Nullable [] functionReturnTypeName = this.functionReturnTypeName;
+        // POLAR: Track unregistered-INOUT surplus locally; decremented as we consume slots.
+        int remainingExtras = extraOutColumns;
         for (int i = 0, j = 0; i < cols; i++, j++) {
           // find the next out parameter, the assumption is that the functionReturnType
           // array will be initialized with 0 and only out parameters will have values
           // other than 0. 0 is the value for java.sql.Types.NULL, which should not
-          // conflict
+          // conflict.
+          // POLAR: When extra OUT columns exist (caller forgot registerOutParameter
+          // for an IN OUT param), do not skip slot j with functionReturnType[j]==0;
+          // instead occupy it with the next surplus column so callResult is aligned
+          // with parameter ordinal positions (1-based). This keeps any user that does
+          // call getXxx(idx) on a registered slot correct, and lets the unregistered
+          // INOUT value silently land in its proper slot (typically unused).
           while (j < functionReturnType.length && functionReturnType[j] == 0) {
+            if (remainingExtras > 0) {
+              remainingExtras--;
+              break;
+            }
             j++;
+          }
+          if (j >= functionReturnType.length) {
+            // Defensive: extraOutColumns guard above should prevent this; if reached,
+            // silently drop trailing surplus columns rather than ArrayIndexOutOfBounds.
+            break;
           }
 
           callResult[j] = rs.getObject(i + 1);
           int columnType = rs.getMetaData().getColumnType(i + 1);
           String typeName = functionReturnTypeName != null ? functionReturnTypeName[j] : null;
 
-          if (columnType != functionReturnType[j]) {
+          // POLAR: Skip type conversion for unregistered slots (functionReturnType[j]==0)
+          // since the user never declared a registered type to convert to.
+          if (functionReturnType[j] != 0 && columnType != functionReturnType[j]) {
             // POLAR: convert out parameter value between compatible types.
             try {
               callResult[j] = convertOutParamValue(callResult[j], columnType,
