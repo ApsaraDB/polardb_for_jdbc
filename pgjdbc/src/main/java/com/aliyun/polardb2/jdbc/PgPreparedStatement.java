@@ -599,7 +599,8 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
             && val.charAt(0) != '['
             && val.charAt(0) != '"') {
           val = "(" + val + ")";
-        } else if (sqlType == Types.ARRAY && isArrayOfComposite(oid)) {
+        } else if (sqlType == Types.ARRAY && isArrayOfComposite(oid)
+            && !isAssociativeArrayType(oid)) {
           val = wrapArrayRecordLiterals(val);
         }
       }
@@ -1395,12 +1396,38 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     /* POLAR DIFF: Fix composite array elements from non-PgArray implementations.
      * Custom Array implementations (e.g., Manulife's OracleArrayParameter) may
      * return toString() values with record fields missing parentheses.
-     * Apply the same record literal wrapping as we do for PGobject TABLE OF types. */
+     * Apply the same record literal wrapping as we do for PGobject TABLE OF types.
+     *
+     * Skip the {...} wrapping for PolarDB associative arrays (typcategory='L'):
+     * those use the (idx => "value",...) form already produced by
+     * PgConnection.buildAssociativeArrayLiteral, and any extra wrapping breaks
+     * the server-side input parser. */
     String arrayStr = x.toString();
-    if (isArrayOfComposite(oid)) {
+    boolean isAssocArray = isAssociativeArrayType(oid);
+    if (isArrayOfComposite(oid) && !isAssocArray) {
       arrayStr = wrapArrayRecordLiterals(arrayStr);
     }
-    setString(i, arrayStr, oid);
+    /* POLAR DIFF: For associative arrays defined inside a package, the type
+     * OID is package-private and cannot be resolved via the wire-protocol
+     * parameter type (server reports "cache lookup failed for type N"). Send
+     * the parameter with Oid.UNSPECIFIED so the server resolves it from the
+     * procedure's parameter type, mirroring the way the server treats string
+     * literals in psql/SQL CALL statements. */
+    setString(i, arrayStr, isAssocArray ? Oid.UNSPECIFIED : oid);
+  }
+
+  /**
+   * POLAR: Check whether the given array OID is a PolarDB associative array
+   * (PL/SQL INDEX BY table, pg_type.typcategory='L'). Such types use a
+   * non-standard text literal form that must not be wrapped with the
+   * standard PostgreSQL array braces.
+   */
+  private boolean isAssociativeArrayType(int arrayOid) throws SQLException {
+    TypeInfo typeInfo = connection.getTypeInfo();
+    if (typeInfo instanceof TypeInfoCache) {
+      return ((TypeInfoCache) typeInfo).isAssociativeArrayType(arrayOid);
+    }
+    return false;
   }
 
   protected long createBlob(int i, InputStream inputStream,

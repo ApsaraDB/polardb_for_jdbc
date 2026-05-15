@@ -1539,6 +1539,28 @@ public class PgConnection implements BaseConnection {
       return makeArray(oid, null);
     }
 
+    /* POLAR DIFF: Handle PolarDB associative array (PL/SQL INDEX BY) types.
+     *
+     * Associative arrays (pg_type.typcategory='L') are conceptually a
+     * key-value map. The server's input function does NOT accept the
+     * standard PostgreSQL array literal {"(v1,v2)","(v3,v4)"}; it expects:
+     *   (idx => "value", idx => "value", ...)
+     * with each value optionally wrapped in double quotes (escaping inner
+     * '"' as '\"' and '\\' as '\\\\').
+     *
+     * Without this branch, binding such an IN parameter via setArray fails:
+     *   ERROR: malformed associative array literal: "{\"(...)\"}"
+     *
+     * The associative array literal is stored as the PgArray's fieldString
+     * and shipped as text by setArray; the server casts it back into the
+     * INDEX BY type via its input function. */
+    if (typeInfo instanceof TypeInfoCache
+        && ((TypeInfoCache) typeInfo).isAssociativeArrayType(oid)) {
+      String literal = buildAssociativeArrayLiteral(elements, delim);
+      return makeArray(oid, literal);
+    }
+    /* POLAR DIFF end */
+
     /* POLAR DIFF: Handle Object[][] / Object[]{Object[],...} for composite array types (TABLE OF).
      *
      * OracleArrayParameter.getOracleArray(conn) builds Object[][] where each
@@ -1746,6 +1768,128 @@ public class PgConnection implements BaseConnection {
       }
     }
     return false;
+  }
+
+  /**
+   * POLAR: Build a PolarDB associative array (pg_type.typcategory='L') text
+   * literal from JDBC elements passed to {@link #createArrayOf}.
+   *
+   * <p>The server's input function for INDEX BY tables expects the form:
+   * <pre>
+   *   (idx => "value",idx => "value",...)
+   * </pre>
+   * with an empty literal {@code ()} for zero entries. The standard
+   * PostgreSQL array literal {@code {...}} is rejected with
+   * "malformed associative array literal".
+   *
+   * <p>Index is 1-based {@code BINARY_INTEGER}. Each value is wrapped in
+   * double quotes with inner {@code "} and {@code \} escaped. RECORD
+   * elements ({@link Struct} or {@code Object[]} of fields) are encoded as
+   * PostgreSQL composite literals {@code (f1,f2,...)} and then escaped as
+   * the associative-array value.
+   */
+  private String buildAssociativeArrayLiteral(@Nullable Object elements, char delim)
+      throws SQLException {
+    Object[] arr;
+    if (elements instanceof Object[]) {
+      arr = (Object[]) elements;
+    } else if (elements != null && elements.getClass().isArray()) {
+      int len = java.lang.reflect.Array.getLength(elements);
+      arr = new Object[len];
+      for (int i = 0; i < len; i++) {
+        arr[i] = java.lang.reflect.Array.get(elements, i);
+      }
+    } else {
+      throw new PSQLException(
+          GT.tr("Cannot build associative array literal from non-array element"),
+          PSQLState.INVALID_PARAMETER_TYPE);
+    }
+    if (arr.length == 0) {
+      return "()";
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append('(');
+    for (int i = 0; i < arr.length; i++) {
+      if (i > 0) {
+        sb.append(delim);
+      }
+      // 1-based index, matches PL/SQL INDEX BY BINARY_INTEGER convention
+      sb.append(i + 1).append(" => ");
+      String inner = buildAssociativeArrayInnerValue(arr[i]);
+      if (inner == null) {
+        sb.append("NULL");
+      } else {
+        sb.append('"');
+        for (int k = 0; k < inner.length(); k++) {
+          char c = inner.charAt(k);
+          if (c == '"' || c == '\\') {
+            sb.append('\\');
+          }
+          sb.append(c);
+        }
+        sb.append('"');
+      }
+    }
+    sb.append(')');
+    return sb.toString();
+  }
+
+  /**
+   * POLAR: Build the inner (pre-quote, pre-escape) value of an associative
+   * array element. Returns {@code null} to signal SQL NULL.
+   */
+  private @Nullable String buildAssociativeArrayInnerValue(@Nullable Object val)
+      throws SQLException {
+    if (val == null) {
+      return null;
+    }
+    if (val instanceof Struct) {
+      Object[] attrs = ((Struct) val).getAttributes();
+      return buildRecordLiteralFromFields(attrs);
+    }
+    if (val instanceof Object[]) {
+      return buildRecordLiteralFromFields((Object[]) val);
+    }
+    return val.toString();
+  }
+
+  /**
+   * POLAR: Build a PostgreSQL composite (record) literal {@code (f1,f2,...)}
+   * from a JDBC attribute array. Fields needing quoting per
+   * {@link #needsQuotingInRecord} are wrapped in double quotes with inner
+   * {@code "} and {@code \} escaped. {@code null} fields produce empty
+   * positions between commas (the standard PostgreSQL composite NULL form).
+   */
+  private String buildRecordLiteralFromFields(@Nullable Object[] fields) {
+    StringBuilder sb = new StringBuilder();
+    sb.append('(');
+    if (fields != null) {
+      for (int i = 0; i < fields.length; i++) {
+        if (i > 0) {
+          sb.append(',');
+        }
+        Object f = fields[i];
+        if (f == null) {
+          continue;
+        }
+        String s = f.toString();
+        if (needsQuotingInRecord(s)) {
+          sb.append('"');
+          for (int k = 0; k < s.length(); k++) {
+            char c = s.charAt(k);
+            if (c == '"' || c == '\\') {
+              sb.append('\\');
+            }
+            sb.append(c);
+          }
+          sb.append('"');
+        } else {
+          sb.append(s);
+        }
+      }
+    }
+    sb.append(')');
+    return sb.toString();
   }
 
   @Override

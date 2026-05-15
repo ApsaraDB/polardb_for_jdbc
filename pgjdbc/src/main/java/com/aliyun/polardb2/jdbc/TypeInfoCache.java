@@ -63,6 +63,11 @@ public class TypeInfoCache implements TypeInfo {
   // array type oid -> base type array element delimiter
   private Map<Integer, Character> arrayOidToDelimiter;
 
+  // POLAR: oid -> pg_type.typcategory (e.g. 'L' = associative array / INDEX BY,
+  // 'K' = nested table / TABLE OF, 'J' = VARRAY, 'A' = std PG array, 'C' = composite).
+  // '\0' is used as a negative-cache marker ("queried but unknown").
+  private Map<Integer, Character> oidToTypCategory;
+
   // POLAR: SqlType -> OID in postgres
   private Map<Integer, Integer> sqlTypeToOid;
 
@@ -78,6 +83,8 @@ public class TypeInfoCache implements TypeInfo {
   private @Nullable PreparedStatement getTypeInfoStatement;
   private @Nullable PreparedStatement getAllTypeInfoStatement;
   private @Nullable PreparedStatement findCollectionByElementStmt;
+  // POLAR: prepared statement for SELECT typcategory FROM pg_type WHERE oid = ?
+  private @Nullable PreparedStatement getTypeCategoryStatement;
   private final ResourceLock lock = new ResourceLock();
 
   // basic pg types info:
@@ -154,6 +161,7 @@ public class TypeInfoCache implements TypeInfo {
     pgNameToPgObject = new HashMap<String, Class<? extends PGobject>>((int) Math.round(types.length * 1.5));
     pgArrayToPgType = new HashMap<Integer, Integer>((int) Math.round(types.length * 1.5));
     arrayOidToDelimiter = new HashMap<Integer, Character>((int) Math.round(types.length * 2.5));
+    oidToTypCategory = new HashMap<Integer, Character>((int) Math.round(types.length * 1.5));
 
     // needs to be synchronized because the iterator is returned
     // from getPGTypeNamesWithSQLTypes()
@@ -1188,5 +1196,72 @@ public class TypeInfoCache implements TypeInfo {
       oid = new Integer(Oid.UNSPECIFIED);
     }
     return oid;
+  }
+
+  /**
+   * POLAR: Look up {@code pg_type.typcategory} for the given OID.
+   *
+   * <p>Result is cached. Returns {@code '\0'} when the OID is unknown or the
+   * lookup yields no row (also cached as a negative result).
+   *
+   * <p>Relevant PolarDB-specific categories:
+   * <ul>
+   *   <li>{@code 'J'} - VARRAY (Oracle-compatible variable-length array)</li>
+   *   <li>{@code 'K'} - Nested Table / TABLE OF</li>
+   *   <li>{@code 'L'} - Associative Array / INDEX BY (key-value map)</li>
+   *   <li>{@code 'A'} - Standard PostgreSQL array</li>
+   *   <li>{@code 'C'} - Composite/record</li>
+   * </ul>
+   */
+  public char getTypeCategory(int oid) throws SQLException {
+    if (oid == Oid.UNSPECIFIED) {
+      return '\0';
+    }
+    try (ResourceLock ignore = lock.obtain()) {
+      Character cached = oidToTypCategory.get(oid);
+      if (cached != null) {
+        return cached;
+      }
+      PreparedStatement stmt = prepareGetTypeCategoryStatement();
+      stmt.setInt(1, oid);
+      char cat = '\0';
+      if (((BaseStatement) stmt).executeWithFlags(QueryExecutor.QUERY_SUPPRESS_BEGIN)) {
+        ResultSet rs = castNonNull(stmt.getResultSet());
+        try {
+          if (rs.next()) {
+            String s = rs.getString(1);
+            if (s != null && !s.isEmpty()) {
+              cat = s.charAt(0);
+            }
+          }
+        } finally {
+          rs.close();
+        }
+      }
+      oidToTypCategory.put(oid, cat);
+      return cat;
+    }
+  }
+
+  private PreparedStatement prepareGetTypeCategoryStatement() throws SQLException {
+    PreparedStatement stmt = this.getTypeCategoryStatement;
+    if (stmt == null) {
+      String sql = "SELECT typcategory FROM pg_catalog.pg_type WHERE oid = ?";
+      this.getTypeCategoryStatement = stmt = conn.prepareStatement(sql);
+    }
+    return stmt;
+  }
+
+  /**
+   * POLAR: Returns {@code true} if the given OID names a PolarDB associative
+   * array (PL/SQL {@code INDEX BY} table, {@code pg_type.typcategory='L'}).
+   *
+   * <p>The server's input function for these types does NOT accept the
+   * standard PostgreSQL array literal {@code {"(...)","(...)"}}; it expects
+   * the {@code (idx => "value", idx => "value", ...)} format. Callers must
+   * format the IN parameter accordingly before binding it.
+   */
+  public boolean isAssociativeArrayType(int oid) throws SQLException {
+    return getTypeCategory(oid) == 'L';
   }
 }
