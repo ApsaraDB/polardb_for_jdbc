@@ -486,6 +486,95 @@ public class PgArray implements java.sql.Array {
   }
 
   /**
+   * POLAR: Check if a value needs double-quoting inside a composite (record)
+   * literal. Per PostgreSQL Composite Types spec, a field value MUST be
+   * double-quoted if it contains comma, parenthesis, double quote, backslash,
+   * or has leading/trailing whitespace.
+   */
+  public static boolean needsQuotingInRecord(String s) {
+    if (s.isEmpty()) {
+      return false;
+    }
+    if (Character.isWhitespace(s.charAt(0))
+        || Character.isWhitespace(s.charAt(s.length() - 1))) {
+      return true;
+    }
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == ',' || c == '(' || c == ')' || c == '"' || c == '\\') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * POLAR: Append a single record field value to the record literal builder,
+   * adding double quotes and escaping {@code "} / {@code \} when required.
+   *
+   * <p>Empty fields are emitted as nothing (representing SQL NULL between
+   * commas, e.g. {@code (a,,c)}).
+   */
+  public static void appendRecordField(StringBuilder sb, String field) {
+    if (field.isEmpty()) {
+      return;
+    }
+    if (!needsQuotingInRecord(field)) {
+      sb.append(field);
+      return;
+    }
+    sb.append('"');
+    for (int k = 0; k < field.length(); k++) {
+      char c = field.charAt(k);
+      if (c == '"' || c == '\\') {
+        sb.append('\\');
+      }
+      sb.append(c);
+    }
+    sb.append('"');
+  }
+
+  /**
+   * POLAR: Build a composite record literal {@code (f1,"f2",...)} from a raw
+   * comma-separated field string produced by Oracle-compatibility frameworks
+   * (e.g. Manulife's OracleArrayParameter / PGobject value).
+   *
+   * <p>Each field is split on {@code ,} and individually inspected; fields
+   * that contain commas, parentheses, quotes, backslashes, or surrounding
+   * whitespace are double-quoted and inner {@code "} / {@code \} escaped.
+   *
+   * <p>This fixes the {@code malformed record literal: "..." Too few columns}
+   * server error reported when a varchar field value contains parentheses
+   * (e.g. {@code 會診摘要副本 ( 詳情請參閱以上英文版 )。}). Without field-
+   * level quoting, the server's record_in parser misinterprets the inner
+   * parentheses as record boundaries.
+   *
+   * <p>NOTE: This assumes the raw input uses {@code ,} as the field
+   * delimiter and that fields themselves do not contain literal commas.
+   * Frameworks that need embedded commas in field values must produce
+   * properly quoted record literals upstream.
+   */
+  public static String buildRecordLiteralFromCsv(String rawCsv) {
+    StringBuilder sb = new StringBuilder();
+    sb.append('(');
+    int n = rawCsv.length();
+    int start = 0;
+    boolean first = true;
+    for (int i = 0; i <= n; i++) {
+      if (i == n || rawCsv.charAt(i) == ',') {
+        if (!first) {
+          sb.append(',');
+        }
+        first = false;
+        appendRecordField(sb, rawCsv.substring(start, i));
+        start = i + 1;
+      }
+    }
+    sb.append(')');
+    return sb.toString();
+  }
+
+  /**
    * POLAR: Fix array elements that should be composite record literals but
    * are missing the enclosing parentheses.
    *
@@ -529,7 +618,9 @@ public class PgArray implements java.sql.Array {
       } else {
         String s = (String) elem;
         if (!s.isEmpty() && s.charAt(0) != '(') {
-          escapeArrayElement(sb, "(" + s + ")");
+          // POLAR: Build the record literal with per-field quoting so that
+          // values containing parentheses / commas don't break record_in.
+          escapeArrayElement(sb, buildRecordLiteralFromCsv(s));
         } else {
           escapeArrayElement(sb, s);
         }

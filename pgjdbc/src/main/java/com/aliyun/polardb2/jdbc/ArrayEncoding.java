@@ -1150,7 +1150,11 @@ final class ArrayEncoding {
               && val.charAt(0) != '{'
               && val.charAt(0) != '['
               && val.charAt(0) != '"') {
-            PgArray.escapeArrayElement(sb, "(" + val + ")");
+            // POLAR: Build the record literal with per-field quoting so that
+            // values containing parentheses / commas (e.g. "會診摘要副本
+            // ( 詳情請參閱以上英文版 )。") don't trigger
+            // server-side "malformed record literal: Too few columns".
+            PgArray.escapeArrayElement(sb, PgArray.buildRecordLiteralFromCsv(val));
           } else {
             PgArray.escapeArrayElement(sb, val);
           }

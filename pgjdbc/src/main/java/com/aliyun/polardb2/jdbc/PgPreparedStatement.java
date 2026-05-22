@@ -654,9 +654,13 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
       }
       // Inner content is raw record fields; wrap as a record literal and
       // use escapeArrayElement to add double quotes (protecting commas).
+      // POLAR: Use buildRecordLiteralFromCsv to ensure each field is
+      // individually quoted when it contains parentheses / commas /
+      // backslashes (otherwise server reports "malformed record literal:
+      // Too few columns" — see MalformedRecordParensTest).
       StringBuilder sb = new StringBuilder();
       sb.append('{');
-      PgArray.escapeArrayElement(sb, "(" + inner + ")");
+      PgArray.escapeArrayElement(sb, PgArray.buildRecordLiteralFromCsv(inner));
       sb.append('}');
       return sb.toString();
     }
@@ -665,7 +669,8 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     sb.append('{');
     if (val.charAt(0) != '(' && val.charAt(0) != '"') {
       // Raw fields without parens — wrap in record literal + double quotes
-      PgArray.escapeArrayElement(sb, "(" + val + ")");
+      // POLAR: Per-field quoting (see comment above).
+      PgArray.escapeArrayElement(sb, PgArray.buildRecordLiteralFromCsv(val));
     } else {
       // Already has parens or quotes — just escape as array element
       PgArray.escapeArrayElement(sb, val);
