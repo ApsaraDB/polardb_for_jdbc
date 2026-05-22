@@ -157,16 +157,19 @@ public class Jdbc3CallableStatementTest extends BaseTest4 {
 
   @Test
   public void testNotEnoughParameters() throws Throwable {
+    // POLAR: Driver tolerates OUT parameter placeholders in the SQL call. For
+    // myiofunc(a INOUT int, b OUT int) defined as 'b := a; a := 1;', invoking
+    // {call myiofunc(?,?)} with setInt(1,2) + registerOutParameter(1,INTEGER)
+    // + registerOutParameter(2,INTEGER) is accepted. The server returns 2 OUT
+    // columns (a=1, b=2) which the driver maps to parameter ordinals.
     CallableStatement cs = con.prepareCall("{call myiofunc(?,?)}");
     cs.setInt(1, 2);
+    cs.registerOutParameter(1, Types.INTEGER);
     cs.registerOutParameter(2, Types.INTEGER);
-    try {
-      cs.execute();
-      fail("Should throw an exception ");
-    } catch (SQLException ex) {
-      assertTrue(ex.getSQLState().equalsIgnoreCase(PSQLState.SYNTAX_ERROR.getState()));
-    }
-
+    cs.execute();
+    assertEquals(1, cs.getInt(1));
+    assertEquals(2, cs.getInt(2));
+    cs.close();
   }
 
   @Test
