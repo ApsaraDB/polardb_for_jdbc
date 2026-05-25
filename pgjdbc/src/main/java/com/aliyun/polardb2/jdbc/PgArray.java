@@ -601,6 +601,13 @@ public class PgArray implements java.sql.Array {
           needsFix = true;
           break;
         }
+        // POLAR: Also check elements that start with '(' — they may have
+        // unquoted fields containing ')' which breaks the server's record_in
+        // parser (causes "malformed record literal: Too few columns").
+        if (!s.isEmpty() && s.charAt(0) == '(' && recordNeedsFieldReQuoting(s)) {
+          needsFix = true;
+          break;
+        }
       }
     }
     if (!needsFix) {
@@ -621,12 +628,87 @@ public class PgArray implements java.sql.Array {
           // POLAR: Build the record literal with per-field quoting so that
           // values containing parentheses / commas don't break record_in.
           escapeArrayElement(sb, buildRecordLiteralFromCsv(s));
+        } else if (!s.isEmpty() && s.charAt(0) == '(' && recordNeedsFieldReQuoting(s)) {
+          // POLAR: Element looks like a record literal but has unquoted fields
+          // containing ')' — re-parse and rebuild with proper field quoting.
+          escapeArrayElement(sb, reQuoteRecordFields(s));
         } else {
           escapeArrayElement(sb, s);
         }
       }
     }
     sb.append('}');
+    return sb.toString();
+  }
+
+  /**
+   * POLAR: Check if a record literal string (starting with '(' and ending with ')')
+   * has any unquoted field values that contain ')' which would confuse the server's
+   * record_in parser into ending the record prematurely.
+   *
+   * <p>Scans the content between the outer parentheses, tracking whether we are
+   * inside a double-quoted field. An unquoted ')' indicates a field that needs
+   * re-quoting.
+   */
+  public static boolean recordNeedsFieldReQuoting(String s) {
+    if (s.length() < 2 || s.charAt(0) != '(' || s.charAt(s.length() - 1) != ')') {
+      return false;
+    }
+    // Scan the inner content (between the first '(' and last ')')
+    boolean inQuotes = false;
+    for (int i = 1; i < s.length() - 1; i++) {
+      char c = s.charAt(i);
+      if (inQuotes) {
+        if (c == '"') {
+          // Check for escaped quote ("" or \")
+          if (i + 1 < s.length() - 1 && s.charAt(i + 1) == '"') {
+            i++; // skip escaped ""
+          } else if (i > 1 && s.charAt(i - 1) == '\\') {
+            // already consumed as \"
+          } else {
+            inQuotes = false; // closing quote
+          }
+        } else if (c == '\\' && i + 1 < s.length() - 1) {
+          i++; // skip escaped char
+        }
+      } else {
+        if (c == '"') {
+          inQuotes = true;
+        } else if (c == ')') {
+          // Found unquoted ')' within the record content — this would break
+          // the server's record_in parser
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * POLAR: Re-parse a record literal and rebuild it with proper field-level quoting.
+   *
+   * <p>Uses {@link PostgresStructConverter#parsePostgresStruct} to correctly parse
+   * the record fields (handling existing quotes), then rebuilds using
+   * {@link #appendRecordField} which adds double-quotes for fields containing
+   * parentheses, commas, quotes, backslashes, or leading/trailing whitespace.
+   *
+   * @param s a record literal string starting with '(' and ending with ')'
+   * @return properly re-quoted record literal
+   */
+  public static String reQuoteRecordFields(String s) {
+    Object[] fields = PostgresStructConverter.parsePostgresStruct(s);
+    StringBuilder sb = new StringBuilder();
+    sb.append('(');
+    for (int i = 0; i < fields.length; i++) {
+      if (i > 0) {
+        sb.append(',');
+      }
+      if (fields[i] != null) {
+        appendRecordField(sb, fields[i].toString());
+      }
+      // null → leave empty (nothing between commas) for PostgreSQL NULL
+    }
+    sb.append(')');
     return sb.toString();
   }
 

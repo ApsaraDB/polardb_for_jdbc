@@ -641,8 +641,20 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     if (val.charAt(0) == '{') {
       // Already has array braces — check if inner content needs parentheses
       String inner = val.substring(1, val.length() - 1).trim();
-      if (inner.isEmpty() || inner.charAt(0) == '(') {
-        return val; // already formatted or empty array
+      if (inner.isEmpty()) {
+        return val;
+      }
+      if (inner.charAt(0) == '(') {
+        // POLAR: Check if the record has unquoted fields containing ')'
+        // which would break the server's record_in parser.
+        if (PgArray.recordNeedsFieldReQuoting(inner)) {
+          StringBuilder sb = new StringBuilder();
+          sb.append('{');
+          PgArray.escapeArrayElement(sb, PgArray.reQuoteRecordFields(inner));
+          sb.append('}');
+          return sb.toString();
+        }
+        return val; // already formatted correctly
       }
       if (inner.charAt(0) == '"') {
         // Quoted element(s) — check if first one already has record parens
@@ -667,12 +679,19 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     // No braces — single record value
     StringBuilder sb = new StringBuilder();
     sb.append('{');
-    if (val.charAt(0) != '(' && val.charAt(0) != '"') {
+    if (val.charAt(0) == '(') {
+      // POLAR: Has parens but check if fields need re-quoting
+      if (PgArray.recordNeedsFieldReQuoting(val)) {
+        PgArray.escapeArrayElement(sb, PgArray.reQuoteRecordFields(val));
+      } else {
+        PgArray.escapeArrayElement(sb, val);
+      }
+    } else if (val.charAt(0) != '"') {
       // Raw fields without parens — wrap in record literal + double quotes
       // POLAR: Per-field quoting (see comment above).
       PgArray.escapeArrayElement(sb, PgArray.buildRecordLiteralFromCsv(val));
     } else {
-      // Already has parens or quotes — just escape as array element
+      // Already has quotes — just escape as array element
       PgArray.escapeArrayElement(sb, val);
     }
     sb.append('}');
