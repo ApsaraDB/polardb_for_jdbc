@@ -8,9 +8,11 @@ package com.aliyun.polardb2.jdbc;
 import static com.aliyun.polardb2.util.internal.Nullness.castNonNull;
 
 import com.aliyun.polardb2.Driver;
+import com.aliyun.polardb2.core.Field;
 import com.aliyun.polardb2.core.Oid;
 import com.aliyun.polardb2.core.ParameterList;
 import com.aliyun.polardb2.core.Query;
+import com.aliyun.polardb2.core.Tuple;
 import com.aliyun.polardb2.util.GT;
 import com.aliyun.polardb2.util.PGobject;
 import com.aliyun.polardb2.util.PSQLException;
@@ -118,14 +120,25 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   @Override
-  public @Nullable ResultSet executeQuery() throws SQLException {
+  public ResultSet executeQuery() throws SQLException {
     try (ResourceLock ignore = lock.obtain()) {
       /* POLAR: For stored procedure/function calls (isFunction=true), allow execution
        * even if no result set is returned (e.g., procedures with only out parameters
-       * that don't assign values). In this case, return null instead of throwing. */
+       * that don't assign values).
+       *
+       * Previously this returned null, but that violates the JDBC spec (executeQuery
+       * must never return null) and causes NullPointerException in connection pools
+       * like HikariCP that wrap the result in a proxy:
+       *   "Cannot invoke java.sql.ResultSet.close() because this.delegate is null"
+       *
+       * Fix: if the procedure produces a result set, return it; otherwise return an
+       * empty ResultSet that can be safely iterated and closed. */
       if (isFunction) {
-        executeWithFlags(0);
-        return null;
+        boolean hasResultSet = executeWithFlags(0);
+        if (hasResultSet && result != null && result.getResultSet() != null) {
+          return getSingleResultSet();
+        }
+        return createDriverResultSet(new Field[0], new java.util.ArrayList<Tuple>());
       }
       return super.executeQuery();
     }
