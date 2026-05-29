@@ -629,8 +629,13 @@ public class Parser {
    * opening quote of an Oracle q-quote literal.  True when the preceding
    * character is {@code q} or {@code Q}, it is itself preceded by an
    * identifier-terminating character (or start of query), and the character
-   * after the opening quote is a valid q-quote start delimiter (anything
-   * other than whitespace or {@code '}).
+   * after the opening quote is a valid q-quote start delimiter.
+   *
+   * <p>Per Oracle, the only hard exclusion for the start delimiter is
+   * whitespace.  In particular {@code '} itself IS allowed: the literal
+   * {@code q''..''} uses {@code '} as the delimiter and {@code ''} as the
+   * end marker.  A lone {@code '} inside the body is treated as a literal
+   * character as long as the next character is not another {@code '}.
    *
    * @param query  the query characters
    * @param offset position of the opening {@code '}
@@ -648,7 +653,24 @@ public class Parser {
       return false;
     }
     char delim = query[offset + 1];
-    return !Character.isWhitespace(delim) && delim != '\'';
+    if (Character.isWhitespace(delim)) {
+      return false;
+    }
+    /* POLAR: Oracle accepts q''..'' (single quote as delimiter, end marker is
+     * '').  When delim == '\'', verify there is a matching '' end marker
+     * later in the query so we don't mistakenly consume an unrelated empty
+     * string literal q'' that just happens to appear in the SQL. */
+    if (delim == '\'') {
+      int i = offset + 2;
+      while (i < query.length - 1) {
+        if (query[i] == '\'' && query[i + 1] == '\'') {
+          return true;
+        }
+        i++;
+      }
+      return false;
+    }
+    return true;
   }
 
   /**

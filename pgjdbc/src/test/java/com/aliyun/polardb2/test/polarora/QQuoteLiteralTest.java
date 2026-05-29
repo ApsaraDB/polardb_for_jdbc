@@ -116,4 +116,67 @@ public class QQuoteLiteralTest {
       }
     }
   }
+
+  // ------------------------------------------------------------------
+  // Cases where the q-quote delimiter is the single quote itself: q''..''
+  // Oracle accepts this form. The opening sequence is q'' (q + opening
+  // quote + delimiter '), the closing sequence is '' (delimiter ' +
+  // closing quote). A lone ' inside the body is literal as long as the
+  // following char is not another '.
+  //
+  //   SELECT q''te:s't ? :44'' FROM dual
+  //
+  // expands to the literal:  te:s't ? :44
+  // ------------------------------------------------------------------
+
+  private static final String Q_QUOTE_SQUOTE_SQL =
+      "SELECT q''te:s't ? :44'' FROM dual";
+
+  private static final String EXPECTED_SQUOTE = "te:s't ? :44";
+
+  /** Single-quote-delimited q-quote via {@link Statement}. */
+  @Test
+  public void testQQuoteSingleQuoteDelimViaStatement() throws SQLException {
+    try (Statement st = conn.createStatement();
+         ResultSet rs = st.executeQuery(Q_QUOTE_SQUOTE_SQL)) {
+      Assert.assertTrue("result set should have a row", rs.next());
+      Assert.assertEquals(
+          "q-quote (single-quote delim) literal content mismatch",
+          EXPECTED_SQUOTE, rs.getString(1));
+      Assert.assertFalse("only one row expected", rs.next());
+    }
+  }
+
+  /** Single-quote-delimited q-quote via {@link PreparedStatement}. */
+  @Test
+  public void testQQuoteSingleQuoteDelimViaPreparedStatement() throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(Q_QUOTE_SQUOTE_SQL)) {
+      Assert.assertEquals(
+          "? inside q'' .. '' must not be exposed as a bind parameter",
+          0, ps.getParameterMetaData().getParameterCount());
+      try (ResultSet rs = ps.executeQuery()) {
+        Assert.assertTrue(rs.next());
+        Assert.assertEquals(EXPECTED_SQUOTE, rs.getString(1));
+      }
+    }
+  }
+
+  /** Single-quote-delimited q-quote via {@link PreparedStatement} with namedParam=true. */
+  @Test
+  public void testQQuoteSingleQuoteDelimViaPreparedStatementNamedParam() throws SQLException {
+    conn.close();
+    Properties props = new Properties();
+    props.put("namedParam", "true");
+    conn = TestUtil.openDB(props);
+
+    try (PreparedStatement ps = conn.prepareStatement(Q_QUOTE_SQUOTE_SQL)) {
+      Assert.assertEquals(
+          ":44 inside q'' .. '' must not be exposed as a named parameter",
+          0, ps.getParameterMetaData().getParameterCount());
+      try (ResultSet rs = ps.executeQuery()) {
+        Assert.assertTrue(rs.next());
+        Assert.assertEquals(EXPECTED_SQUOTE, rs.getString(1));
+      }
+    }
+  }
 }
