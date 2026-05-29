@@ -50,6 +50,12 @@ public class CallableStatementTypeConversionTest {
         "CREATE OR REPLACE FUNCTION test_bigint_out(a bigint, b out bigint) RETURN bigint IS "
             + "BEGIN b := a * 10; RETURN b; END;");
 
+    // Simulates DBMS_SQL.EXECUTE-style API: PolarDB declares the result as bigint,
+    // but Oracle-trained frameworks register the OUT/return type as NUMERIC.
+    stmt.execute(
+        "CREATE OR REPLACE FUNCTION test_smallint_out(a smallint, b out smallint) RETURN smallint IS "
+            + "BEGIN b := a + 1; RETURN b; END;");
+
     stmt.execute(
         "CREATE OR REPLACE FUNCTION test_numeric_out(a numeric, b out numeric) RETURN numeric IS "
             + "BEGIN b := a + 0.5; RETURN b; END;");
@@ -94,6 +100,7 @@ public class CallableStatementTypeConversionTest {
     Statement stmt = conn.createStatement();
     stmt.execute("DROP FUNCTION IF EXISTS test_int_out(int)");
     stmt.execute("DROP FUNCTION IF EXISTS test_bigint_out(bigint)");
+    stmt.execute("DROP FUNCTION IF EXISTS test_smallint_out(smallint)");
     stmt.execute("DROP FUNCTION IF EXISTS test_numeric_out(numeric)");
     stmt.execute("DROP FUNCTION IF EXISTS test_varchar_out(varchar)");
     stmt.execute("DROP FUNCTION IF EXISTS test_bool_out(boolean)");
@@ -161,6 +168,67 @@ public class CallableStatementTypeConversionTest {
     cs.registerOutParameter(3, Types.VARCHAR);  // out parameter b
     cs.execute();
     assertEquals("1000", cs.getString(3));
+    cs.close();
+  }
+
+  /**
+   * Test: PolarDB returns BIGINT but the caller registers NUMERIC.  This is the
+   * DBMS_SQL.EXECUTE / DBMS_SQL.OPEN_CURSOR scenario reported by customers --
+   * Oracle declares the result as NUMBER, framework registers Types.NUMERIC,
+   * PolarDB declares it as bigint.  Driver must coerce bigint -> NUMERIC.
+   */
+  @Test
+  public void testBigintToNumeric() throws SQLException {
+    CallableStatement cs = conn.prepareCall("{ ? = call test_bigint_out(?, ?) }");
+    cs.registerOutParameter(1, Types.NUMERIC);  // function return value
+    cs.setLong(2, 100L);
+    cs.registerOutParameter(3, Types.NUMERIC);  // out parameter b
+    cs.execute();
+    assertEquals(new BigDecimal("1000"), cs.getBigDecimal(1));
+    assertEquals(new BigDecimal("1000"), cs.getBigDecimal(3));
+    cs.close();
+  }
+
+  /**
+   * Test: BIGINT -> INTEGER coercion (caller registers INTEGER for a bigint OUT).
+   */
+  @Test
+  public void testBigintToInteger() throws SQLException {
+    CallableStatement cs = conn.prepareCall("{ ? = call test_bigint_out(?, ?) }");
+    cs.registerOutParameter(1, Types.INTEGER);
+    cs.setLong(2, 100L);
+    cs.registerOutParameter(3, Types.INTEGER);
+    cs.execute();
+    assertEquals(1000, cs.getInt(3));
+    cs.close();
+  }
+
+  /**
+   * Test: SMALLINT -> NUMERIC coercion (caller registers NUMERIC for a smallint OUT).
+   */
+  @Test
+  public void testSmallintToNumeric() throws SQLException {
+    CallableStatement cs = conn.prepareCall("{ ? = call test_smallint_out(?, ?) }");
+    cs.registerOutParameter(1, Types.NUMERIC);
+    cs.setShort(2, (short) 41);
+    cs.registerOutParameter(3, Types.NUMERIC);
+    cs.execute();
+    assertEquals(new BigDecimal("42"), cs.getBigDecimal(1));
+    assertEquals(new BigDecimal("42"), cs.getBigDecimal(3));
+    cs.close();
+  }
+
+  /**
+   * Test: NUMERIC -> SMALLINT coercion.
+   */
+  @Test
+  public void testNumericToSmallint() throws SQLException {
+    CallableStatement cs = conn.prepareCall("{ ? = call test_numeric_out(?, ?) }");
+    cs.registerOutParameter(1, Types.SMALLINT);
+    cs.setBigDecimal(2, new BigDecimal("10.0"));
+    cs.registerOutParameter(3, Types.SMALLINT);
+    cs.execute();
+    assertEquals((short) 10, cs.getShort(3));
     cs.close();
   }
 
@@ -501,10 +569,12 @@ public class CallableStatementTypeConversionTest {
   }
 
   /**
-   * Test: Register BIGINT out param, get as NUMERIC (bigint -> numeric)
+   * Test: Register BIGINT out param, get as NUMERIC, BIGINT for function return.
+   * (Covered more thoroughly by {@link #testBigintToNumeric()} above which
+   * additionally registers the function return value as NUMERIC.)
    */
   @Test
-  public void testBigintToNumeric() throws SQLException {
+  public void testBigintOutAsNumericReturnAsBigint() throws SQLException {
     CallableStatement cs = conn.prepareCall("{ ? = call test_bigint_out(?, ?) }");
     cs.registerOutParameter(1, Types.BIGINT);   // function return value
     cs.setLong(2, 100L);
