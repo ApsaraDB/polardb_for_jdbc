@@ -270,12 +270,6 @@ public class TypeInfoCache implements TypeInfo {
     String typtype = rs.getString("typtype");
     if (isArray) {
       type = Types.ARRAY;
-    } else if ("a".equals(typtype)) {
-      /* POLAR: PolarDB TABLE OF types have typtype='a' (array) but may not
-       * use pg_catalog.array_in as their typinput function. Recognise them
-       * as ARRAY so that PgResultSet.internalGetObject returns a PgArray
-       * instead of a plain PGobject. */
-      type = Types.ARRAY;
     } else if ("c".equals(typtype)) {
       type = Types.STRUCT;
     } else if ("d".equals(typtype)) {
@@ -283,10 +277,39 @@ public class TypeInfoCache implements TypeInfo {
     } else if ("e".equals(typtype)) {
       type = Types.VARCHAR;
     }
+    /* POLAR: typtype='a' (PolarDB TABLE OF / VARRAY / INDEX BY collection) was
+     * previously force-mapped to Types.ARRAY here. That regressed user code
+     * which still relied on the legacy behaviour of registerOutParameter(idx,
+     * Types.OTHER) returning a raw PGobject (HSTORE-style text). We now leave
+     * such collection types at Types.OTHER and let downstream call sites
+     * (PgCallableStatement.convertOutParamValue, PgResultSet.getObject) wrap
+     * the value into PgArray / PgCompositeObject only when the user explicitly
+     * registers ARRAY / STRUCT. See isOracleTableOfType(int) for the
+     * server-side category check used by those wrappers. */
     if (type == null) {
       type = Types.OTHER;
     }
     return type;
+  }
+
+  /**
+   * POLAR: Returns {@code true} if the given OID names a PolarDB Oracle-style
+   * collection type whose textual representation is NOT the standard
+   * {@code {elem1,elem2,...}} array literal. This includes:
+   * <ul>
+   *   <li>{@code 'J'} - VARRAY</li>
+   *   <li>{@code 'K'} - Nested Table / TABLE OF</li>
+   *   <li>{@code 'L'} - Associative Array / INDEX BY (HSTORE-style)</li>
+   * </ul>
+   *
+   * <p>Used by {@code PgCallableStatement.convertOutParamValue} to decide
+   * whether a {@code Types.OTHER} value coming back from the server should be
+   * wrapped as {@link PgArray} when the caller registered
+   * {@link java.sql.Types#ARRAY}.
+   */
+  public boolean isOracleTableOfType(int oid) throws SQLException {
+    char cat = getTypeCategory(oid);
+    return cat == 'J' || cat == 'K' || cat == 'L';
   }
 
   private PreparedStatement prepareGetAllTypeInfoStatement() throws SQLException {

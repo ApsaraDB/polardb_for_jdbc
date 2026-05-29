@@ -375,11 +375,28 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       if (registeredType == Types.ARRAY && value instanceof String) {
         return buildPgArrayFromString(value.toString(), registeredTypeName);
       }
+      /* POLAR: After typtype='a' was reverted to Types.OTHER in TypeInfoCache,
+       * PolarDB TABLE OF / VARRAY / INDEX BY columns surface here as PGobject
+       * instead of String. Honour ARRAY registration in that case too, by
+       * unwrapping the PGobject's raw text and wrapping it as PgArray. */
+      if (registeredType == Types.ARRAY && value instanceof PGobject) {
+        PGobject pgo = (PGobject) value;
+        String raw = pgo.getValue();
+        String name = registeredTypeName != null && !registeredTypeName.isEmpty()
+            ? registeredTypeName : pgo.getType();
+        return buildPgArrayFromString(raw == null ? "" : raw, name);
+      }
       // POLAR: If user registered as STRUCT and value is a String (DO block composite OUT param),
       // wrap it as PGobject so that getObject() returns a usable composite value instead of
       // a raw String.
       if (registeredType == Types.STRUCT && value instanceof String) {
         return buildPgObjectFromString(value.toString(), registeredTypeName);
+      }
+      /* POLAR: STRUCT registration with a PGobject value is already a usable
+       * composite handle; pass it through (optionally re-tagging the type name
+       * so getSQLTypeName() returns what the caller registered). */
+      if (registeredType == Types.STRUCT && value instanceof PGobject) {
+        return value;
       }
       // If value is a String, try to parse it to the registered type
       if (value instanceof String && registeredType != Types.OTHER) {

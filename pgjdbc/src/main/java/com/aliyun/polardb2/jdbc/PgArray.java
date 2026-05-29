@@ -388,31 +388,46 @@ public class PgArray implements java.sql.Array {
 
     Field[] fields = new Field[2];
 
+    /* POLAR: For PolarDB TABLE OF / VARRAY / INDEX BY (HSTORE-style) literals,
+     * the parser preserves original keys on arrayList.keys. Surface them as
+     * the INDEX column (Oid.VARCHAR) instead of the synthetic 1..n integer
+     * sequence so that callers can read INDEX BY VARCHAR2 keys (e.g. "alpha",
+     * "beta") directly. Standard PG arrays leave arrayList.keys == null and
+     * keep the historical INT4 INDEX behaviour. */
+    final List<@Nullable String> arrayKeys = arrayList.keys;
+    final boolean hasKeys = arrayKeys != null;
+
     // one dimensional array
     if (arrayList.dimensionsCount <= 1) {
       // array element type
       final int baseOid = getConnection().getTypeInfo().getPGArrayElement(oid);
-      fields[0] = new Field("INDEX", Oid.INT4);
+      fields[0] = new Field("INDEX", hasKeys ? Oid.VARCHAR : Oid.INT4);
       fields[1] = new Field("VALUE", baseOid);
 
       for (int i = 0; i < count; i++) {
         int offset = (int) index + i;
         byte[] @Nullable [] t = new byte[2][0];
         String v = (String) arrayList.get(offset);
-        t[0] = getConnection().encodeString(Integer.toString(offset + 1));
+        String idxStr = hasKeys
+            ? String.valueOf(arrayKeys.get(offset))
+            : Integer.toString(offset + 1);
+        t[0] = getConnection().encodeString(idxStr);
         t[1] = v == null ? null : getConnection().encodeString(v);
         rows.add(new Tuple(t));
       }
     } else {
       // when multi-dimensional
-      fields[0] = new Field("INDEX", Oid.INT4);
+      fields[0] = new Field("INDEX", hasKeys ? Oid.VARCHAR : Oid.INT4);
       fields[1] = new Field("VALUE", oid);
       for (int i = 0; i < count; i++) {
         int offset = (int) index + i;
         byte[] @Nullable [] t = new byte[2][0];
         Object v = arrayList.get(offset);
 
-        t[0] = getConnection().encodeString(Integer.toString(offset + 1));
+        String idxStr = hasKeys
+            ? String.valueOf(arrayKeys.get(offset))
+            : Integer.toString(offset + 1);
+        t[0] = getConnection().encodeString(idxStr);
         t[1] = v == null ? null : getConnection().encodeString(toString((ArrayDecoding.PgArrayList) v));
         rows.add(new Tuple(t));
       }

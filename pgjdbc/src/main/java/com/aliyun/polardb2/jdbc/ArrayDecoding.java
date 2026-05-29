@@ -59,6 +59,16 @@ final class ArrayDecoding {
      */
     int dimensionsCount = 1;
 
+    /**
+     * POLAR: For PolarDB {@code TABLE OF ... INDEX BY} (typcategory='L' /
+     * 'K' / 'J') text representations of the form
+     * <pre>k1 =&gt; "v1", k2 =&gt; "v2", ...</pre>
+     * the original keys are preserved here, in the same order as the values.
+     * {@code null} means the value list does not carry keys (the standard
+     * {@code {elem1,elem2,...}} array literal path).
+     */
+    @Nullable List<@Nullable String> keys;
+
   }
 
   private interface ArrayDecoder<A extends @NonNull Object> {
@@ -768,33 +778,59 @@ final class ArrayDecoding {
   /**
    * POLAR: Parses PolarDB TABLE OF literal format into a {@link PgArrayList}.
    *
-   * <p>TABLE OF types (with INDEX BY BINARY_INTEGER) whose element type is a
-   * package-internal RECORD use a non-standard text representation:
+   * <p>TABLE OF types (with INDEX BY BINARY_INTEGER / VARCHAR2) whose element
+   * type is a package-internal RECORD use a non-standard text representation:
    * <pre>
    *   index =&gt; "value", index =&gt; "value", ...
    * </pre>
-   * where {@code index} is a number or {@code -}, and values are optionally
-   * quoted with {@code "} (with {@code \"} for literal quotes inside).
+   * where {@code index} is a number, {@code -}, or a quoted string, and values
+   * are optionally quoted with {@code "} (with {@code \"} for literal quotes
+   * inside).
+   *
+   * <p>The original keys are preserved on the returned list's {@code keys}
+   * field so that {@code Array.getResultSet()} can surface them as the index
+   * column when the user wants the (key, value) pairs (e.g. for INDEX BY
+   * VARCHAR2 associative arrays).
    *
    * @param fieldString The TABLE OF array value to parse.
    * @param delim       The delimiter character (typically comma).
-   * @return A {@link PgArrayList} containing the parsed element values.
+   * @return A {@link PgArrayList} containing the parsed element values, with
+   *         {@link PgArrayList#keys} populated in 1-to-1 order.
    */
   private static PgArrayList buildTableOfArrayList(String fieldString, char delim) {
     final PgArrayList arrayList = new PgArrayList();
-    final char[] chars = fieldString.toCharArray();
+    final List<@Nullable String> keys = new ArrayList<@Nullable String>();
+    arrayList.keys = keys;
+
+    // POLAR: strip the outermost '(...)' or '{...}' wrapping that PolarDB may
+    // emit for TABLE OF / associative-array literals (e.g.
+    // "(1 => \"alpha\", 2 => \"beta\")"). Without this, the leading '(' would
+    // glue onto the first key and the trailing ')' onto the last value.
+    String body = fieldString;
+    int bl = 0;
+    int br = body.length();
+    while (bl < br && Character.isWhitespace(body.charAt(bl))) {
+      bl++;
+    }
+    while (br > bl && Character.isWhitespace(body.charAt(br - 1))) {
+      br--;
+    }
+    if (br - bl >= 2) {
+      char first = body.charAt(bl);
+      char last = body.charAt(br - 1);
+      if ((first == '(' && last == ')') || (first == '{' && last == '}')) {
+        body = body.substring(bl + 1, br - 1);
+      } else if (bl > 0 || br < body.length()) {
+        body = body.substring(bl, br);
+      }
+    }
+
+    final char[] chars = body.toCharArray();
     final int len = chars.length;
     int i = 0;
 
     while (i < len) {
-      // --- skip to the '=>' arrow ---
-      int arrowIdx = fieldString.indexOf("=>", i);
-      if (arrowIdx < 0) {
-        break; // no more elements
-      }
-      i = arrowIdx + 2; // skip past '=>'
-
-      // skip whitespace after '=>'
+      // ---- skip leading whitespace ----
       while (i < len && Character.isWhitespace(chars[i])) {
         i++;
       }
@@ -802,7 +838,57 @@ final class ArrayDecoding {
         break;
       }
 
-      // --- parse the value ---
+      // ---- parse the key (everything up to '=>'), supporting both quoted
+      // and unquoted forms; an unquoted key is anything other than '=>' /
+      // delim / whitespace and must not contain '"'. ----
+      String parsedKey;
+      if (chars[i] == '"') {
+        StringBuilder kb = new StringBuilder();
+        i++; // opening quote
+        while (i < len) {
+          if (chars[i] == '\\' && i + 1 < len) {
+            kb.append(chars[i + 1]);
+            i += 2;
+            continue;
+          }
+          if (chars[i] == '"') {
+            i++; // closing quote
+            break;
+          }
+          kb.append(chars[i]);
+          i++;
+        }
+        parsedKey = kb.toString();
+      } else {
+        int arrowIdx = body.indexOf("=>", i);
+        if (arrowIdx < 0) {
+          break;
+        }
+        parsedKey = body.substring(i, arrowIdx).trim();
+        i = arrowIdx;
+      }
+
+      // ---- locate '=>' (skipping any whitespace between key and arrow) ----
+      while (i < len && Character.isWhitespace(chars[i])) {
+        i++;
+      }
+      if (i + 1 >= len || chars[i] != '=' || chars[i + 1] != '>') {
+        break;
+      }
+      i += 2; // skip past '=>'
+
+      // skip whitespace after '=>'
+      while (i < len && Character.isWhitespace(chars[i])) {
+        i++;
+      }
+      if (i >= len) {
+        // arrow without value: record an empty value to keep keys/values aligned
+        keys.add(parsedKey);
+        arrayList.add("");
+        break;
+      }
+
+      // ---- parse the value ----
       StringBuilder value = new StringBuilder();
       boolean insideString = false;
       boolean wasInsideString = false;
@@ -841,6 +927,7 @@ final class ArrayDecoding {
 
       String v = value.toString();
       if (!v.isEmpty() || wasInsideString) {
+        keys.add(parsedKey);
         arrayList.add(!wasInsideString && "NULL".equals(v) ? null : v);
       }
     }
