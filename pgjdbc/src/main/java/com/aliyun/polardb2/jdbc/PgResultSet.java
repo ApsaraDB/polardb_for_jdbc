@@ -3206,7 +3206,14 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
     }
 
     if (ch == '(') {
-      s = "-" + PGtokenizer.removePara(s).substring(1);
+      // POLAR: Money format is ($##.##) → after removePara we expect "$##.##".
+      // Composite type literals like "()" or "(val1,val2)" also start with '('
+      // but are NOT money. Guard against StringIndexOutOfBoundsException when
+      // removePara yields an empty or single-char string (e.g. removePara("()") → "").
+      String inner = PGtokenizer.removePara(s);
+      if (inner.length() > 1 && inner.charAt(0) == '$') {
+        s = "-" + inner.substring(1);
+      }
     } else if (ch == '$') {
       s = s.substring(1);
     } else if (ch == '-' && s.charAt(1) == '$') {
