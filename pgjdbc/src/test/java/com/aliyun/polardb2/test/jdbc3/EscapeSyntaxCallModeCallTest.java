@@ -12,7 +12,6 @@ import static org.junit.Assert.fail;
 import com.aliyun.polardb2.PGProperty;
 import com.aliyun.polardb2.core.ServerVersion;
 import com.aliyun.polardb2.jdbc.EscapeSyntaxCallMode;
-import com.aliyun.polardb2.test.TestUtil;
 import com.aliyun.polardb2.util.PSQLState;
 
 import org.junit.Test;
@@ -52,15 +51,11 @@ public class EscapeSyntaxCallModeCallTest extends EscapeSyntaxCallModeBaseTest {
 
   @Test
   public void testInvokeFunctionHavingReturnParameter() throws Throwable {
-    // escapeSyntaxCallMode=call will cause a CALL statement to be used for the JDBC escape call
-    // syntax used below. "mysumfunc" is a function, so the attempted invocation should fail.
-
-    //version 14 changes this to undefined function
-    PSQLState expected = PSQLState.WRONG_OBJECT_TYPE;
-
-    if (TestUtil.haveMinimumServerVersion(con, ServerVersion.v14)) {
-      expected = PSQLState.UNDEFINED_FUNCTION;
-    }
+    // POLAR (design.md): the return placeholder "? =" expresses function intent,
+    // so the driver dispatches EXEC instead of CALL. On a server without the matching
+    // function/procedure same-name routing GUC, EXEC still resolves through the
+    // procedure path and reports UNDEFINED_FUNCTION because mysumfunc is a function.
+    PSQLState expected = PSQLState.UNDEFINED_FUNCTION;
 
     assumeCallableStatementsSupported();
     assumeMinimumServerVersion(ServerVersion.v11);

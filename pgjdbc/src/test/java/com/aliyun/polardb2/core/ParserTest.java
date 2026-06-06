@@ -154,6 +154,17 @@ public class ParserTest {
     assertEquals("select * from lower(?,?) as result", Parser.modifyJdbcCall("{call lower(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.SELECT, false).getSql());
     assertEquals("call lower(?,?)", Parser.modifyJdbcCall("{call lower(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL_IF_NO_RETURN, false).getSql());
     assertEquals("call lower(?,?)", Parser.modifyJdbcCall("{call lower(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, false).getSql());
+
+    // POLAR: design.md contract - callFunctionMode=true + return placeholder "? =" -> EXEC
+    assertEquals("exec mysumfunc(?,?)", Parser.modifyJdbcCall("{ ? = call mysumfunc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, true).getSql());
+    assertEquals("exec mysumfunc(?,?)", Parser.modifyJdbcCall("{ ? = call mysumfunc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL_IF_NO_RETURN, true).getSql());
+    assertEquals("exec pack_getValue()", Parser.modifyJdbcCall("{ ? = call pack_getValue}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, true).getSql());
+    // No return placeholder -> CALL
+    assertEquals("call myioproc(?,?)", Parser.modifyJdbcCall("{call myioproc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, true).getSql());
+    // callFunctionMode=false: legacy path keeps CALL with placeholder injection
+    assertEquals("call mysumfunc(?,?,?)", Parser.modifyJdbcCall("{ ? = call mysumfunc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, false).getSql());
+    // SELECT mode is unaffected by callFunctionMode
+    assertEquals("select * from mysumfunc(?,?) as result", Parser.modifyJdbcCall("{ ? = call mysumfunc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.SELECT, true).getSql());
   }
 
   @Test

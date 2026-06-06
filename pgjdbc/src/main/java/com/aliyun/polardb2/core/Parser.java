@@ -1659,6 +1659,12 @@ public class Parser {
         || (!callFunctionMode && outParamBeforeFunc && escapeSyntaxCallMode == EscapeSyntaxCallMode.CALL_IF_NO_RETURN)) {
       prefix = "select * from ";
       suffix = " as result";
+    } else if (callFunctionMode && outParamBeforeFunc) {
+      // POLAR: design.md contract - escape with return placeholder "? =" expresses
+      // function intent, dispatch as EXEC so the kernel can disambiguate same-name
+      // function/procedure pairs (hits the bare-name function and packages RETURN+OUT).
+      prefix = "exec ";
+      suffix = "";
     } else {
       prefix = "call ";
       suffix = "";
