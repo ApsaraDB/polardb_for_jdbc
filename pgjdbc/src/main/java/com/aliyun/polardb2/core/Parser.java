@@ -1898,7 +1898,9 @@ public class Parser {
   }
 
   /**
-   * Judge whether the current end is the end paired with begin
+   * Judge whether the current end is the end paired with begin.
+   * Supports "END;", "END label;", and "END multi_word label;" forms.
+   * Examples: "END;", "END my_proc;", "END BEFORE EACH ROW;", "END AFTER STATEMENT;"
    */
   private static int[] parseEnd(final int offset, final char[] query, final int inBeginEnd) {
     int tempOffset = offset;
@@ -1930,12 +1932,56 @@ public class Parser {
         // This is the end paired with begin
         tempInBeginEnd--;
         break;
+      } else if (isIdentifierStartChar(query[tempOffset])) {
+        // Check if this is a PL/SQL control-flow END (END IF, END LOOP, END CASE).
+        // These are NOT BEGIN/END pairs and must not decrement inBeginEnd.
+        int identStart = tempOffset;
+        tempOffset++;
+        while (tempOffset < query.length && isIdentifierContChar(query[tempOffset])) {
+          tempOffset++;
+        }
+        int identLen = tempOffset - identStart;
+        if (isControlFlowEnd(query, identStart, identLen)) {
+          // END IF / END LOOP / END CASE — not a BEGIN/END pair, just break
+          tempOffset--;
+          break;
+        }
+        // POLAR: This is a label name (e.g. "END my_proc;" or "END dp_customer;")
+        // or a compound trigger section (e.g. "END BEFORE EACH ROW;").
+        // Continue the loop to find the terminator ";" or "/" after the label.
       } else {
         tempOffset--;
         break;
       }
     }
     return new int[]{tempOffset, tempInBeginEnd};
+  }
+
+  /**
+   * Check if the identifier after END is a PL/SQL control-flow keyword
+   * (IF, LOOP, CASE). These form "END IF;", "END LOOP;", "END CASE;"
+   * which are NOT BEGIN/END block terminators.
+   */
+  private static boolean isControlFlowEnd(final char[] query, int start, int len) {
+    if (len == 2) {
+      // "IF"
+      char c0 = query[start];
+      char c1 = query[start + 1];
+      return (c0 == 'i' || c0 == 'I') && (c1 == 'f' || c1 == 'F');
+    }
+    if (len == 4) {
+      // "LOOP" or "CASE"
+      char c0 = query[start];
+      char c1 = query[start + 1];
+      char c2 = query[start + 2];
+      char c3 = query[start + 3];
+      boolean isLoop = (c0 == 'l' || c0 == 'L') && (c1 == 'o' || c1 == 'O')
+          && (c2 == 'o' || c2 == 'O') && (c3 == 'p' || c3 == 'P');
+      boolean isCase = (c0 == 'c' || c0 == 'C') && (c1 == 'a' || c1 == 'A')
+          && (c2 == 's' || c2 == 'S') && (c3 == 'e' || c3 == 'E');
+      return isLoop || isCase;
+    }
+    return false;
   }
 
   private static int escapeFunction(char[] sql, int i, StringBuilder newsql, boolean stdStrings)

@@ -309,4 +309,118 @@ public class ParserTest {
     Assert.assertNotNull(qry);
     Assert.assertEquals("There should only be one query returned here", 1, qry.size());
   }
+
+  /**
+   * POLAR: Test that COMPOUND TRIGGER with trailing slash is parsed correctly.
+   * The slash should be stripped and not sent to the server.
+   */
+  @Test
+  public void testCompoundTriggerWithTrailingSlash() throws SQLException {
+    String query = "CREATE OR REPLACE TRIGGER test_trigger\n"
+        + "FOR INSERT OR UPDATE ON test_table\n"
+        + "COMPOUND TRIGGER\n"
+        + "BEFORE EACH ROW IS\n"
+        + "  v_val number;\n"
+        + "  begin\n"
+        + "    v_val := 1;\n"
+        + "END BEFORE EACH ROW;\n"
+        + "AFTER STATEMENT IS\n"
+        + "BEGIN\n"
+        + "  NULL;\n"
+        + "END AFTER STATEMENT;\n"
+        + "end test_trigger;\n"
+        + "\n"
+        + "/";
+    List<NativeQuery> qry = Parser.parseJdbcSql(query, true, true, false, true, true, false, false);
+    Assert.assertNotNull(qry);
+    Assert.assertEquals("COMPOUND TRIGGER + slash should produce one query", 1, qry.size());
+    String sql = qry.get(0).nativeSql;
+    Assert.assertFalse("Slash should not appear in parsed SQL", sql.trim().endsWith("/"));
+  }
+
+  /**
+   * POLAR: Test that COMPOUND TRIGGER DDL + slash + ALTER TRIGGER is split into two queries.
+   */
+  @Test
+  public void testCompoundTriggerWithSlashAndAlter() throws SQLException {
+    String query = "CREATE OR REPLACE TRIGGER test_trigger\n"
+        + "FOR INSERT OR UPDATE ON test_table\n"
+        + "COMPOUND TRIGGER\n"
+        + "BEFORE EACH ROW IS\n"
+        + "  v_val number;\n"
+        + "  begin\n"
+        + "    v_val := 1;\n"
+        + "END BEFORE EACH ROW;\n"
+        + "AFTER STATEMENT IS\n"
+        + "BEGIN\n"
+        + "  NULL;\n"
+        + "END AFTER STATEMENT;\n"
+        + "end test_trigger;\n"
+        + "\n"
+        + "/\n"
+        + "ALTER TRIGGER test_trigger ENABLE";
+    List<NativeQuery> qry = Parser.parseJdbcSql(query, true, true, true, true, true, false, false);
+    Assert.assertNotNull(qry);
+    Assert.assertEquals("DDL + slash + ALTER should produce two queries", 2, qry.size());
+    String firstSql = qry.get(0).nativeSql;
+    String secondSql = qry.get(1).nativeSql;
+    Assert.assertFalse("First query should not contain slash", firstSql.contains("\n/\n"));
+    Assert.assertTrue("Second query should be ALTER TRIGGER",
+        secondSql.trim().toUpperCase(java.util.Locale.ROOT).startsWith("ALTER"));
+  }
+
+  /**
+   * POLAR: Test simple trigger with trailing slash (regression check).
+   */
+  @Test
+  public void testSimpleTriggerWithTrailingSlash() throws SQLException {
+    String query = "CREATE OR REPLACE TRIGGER test_trigger\n"
+        + "BEFORE INSERT ON test_table\n"
+        + "FOR EACH ROW\n"
+        + "BEGIN\n"
+        + "  NULL;\n"
+        + "END test_trigger;\n"
+        + "\n"
+        + "/";
+    List<NativeQuery> qry = Parser.parseJdbcSql(query, true, true, false, true, true, false, false);
+    Assert.assertNotNull(qry);
+    Assert.assertEquals("Simple trigger + slash should produce one query", 1, qry.size());
+    String sql = qry.get(0).nativeSql;
+    Assert.assertFalse("Slash should not appear in parsed SQL", sql.trim().endsWith("/"));
+  }
+
+  /**
+   * POLAR: Test procedure with END label_name; and trailing slash.
+   */
+  @Test
+  public void testProcedureEndLabelWithSlash() throws SQLException {
+    String query = "CREATE OR REPLACE PROCEDURE my_proc IS\n"
+        + "BEGIN\n"
+        + "  NULL;\n"
+        + "END my_proc;\n"
+        + "/";
+    List<NativeQuery> qry = Parser.parseJdbcSql(query, true, true, false, true, true, false, false);
+    Assert.assertNotNull(qry);
+    Assert.assertEquals("Procedure with END label + slash should produce one query", 1, qry.size());
+    String sql = qry.get(0).nativeSql;
+    Assert.assertFalse("Slash should not appear in parsed SQL", sql.trim().endsWith("/"));
+  }
+
+  /**
+   * POLAR: Test that division operator inside PL/SQL is not affected by slash handling.
+   */
+  @Test
+  public void testDivisionOperatorNotAffected() throws SQLException {
+    String query = "CREATE OR REPLACE PROCEDURE div_test IS\n"
+        + "  v_result number;\n"
+        + "BEGIN\n"
+        + "  v_result := 10 / 2;\n"
+        + "END div_test;\n"
+        + "/";
+    List<NativeQuery> qry = Parser.parseJdbcSql(query, true, true, false, true, true, false, false);
+    Assert.assertNotNull(qry);
+    Assert.assertEquals("Division inside procedure should not cause split", 1, qry.size());
+    String sql = qry.get(0).nativeSql;
+    Assert.assertTrue("Division operator should be preserved", sql.contains("10 / 2"));
+  }
 }
