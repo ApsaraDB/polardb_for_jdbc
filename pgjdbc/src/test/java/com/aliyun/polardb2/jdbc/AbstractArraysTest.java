@@ -1136,6 +1136,11 @@ public abstract class AbstractArraysTest<A> {
       return false;
     }
 
+    @Override
+    public boolean isAutocommitFetchEnabled() {
+      return false;
+    }
+
     /**
      * {@inheritDoc}
      */

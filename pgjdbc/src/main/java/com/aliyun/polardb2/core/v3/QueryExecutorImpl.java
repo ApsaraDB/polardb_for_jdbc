@@ -2667,6 +2667,24 @@ public class QueryExecutorImpl extends QueryExecutorBase {
   }
 
   @Override
+  public void closePortal(ResultCursor cursor) throws SQLException {
+    try (ResourceLock ignore = lock.obtain()) {
+      Portal portal = (Portal) cursor;
+      try {
+        sendClosePortal(portal.getPortalName());
+        sendSync();
+        pgStream.flush();
+        processResults(new ResultHandlerBase(), 0, false);
+      } catch (IOException e) {
+        abort();
+        throw new PSQLException(
+            GT.tr("An I/O error occurred while sending to the backend."),
+            PSQLState.CONNECTION_FAILURE, e);
+      }
+    }
+  }
+
+  @Override
   public void setAdaptiveFetch(boolean adaptiveFetch) {
     this.adaptiveFetchCache.setAdaptiveFetch(adaptiveFetch);
   }

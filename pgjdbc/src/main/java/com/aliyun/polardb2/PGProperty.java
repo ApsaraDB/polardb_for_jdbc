@@ -102,6 +102,16 @@ public enum PGProperty {
       "Name of class which implements AuthenticationPlugin"
   ),
 
+  /* POLAR: autocommit cursor fetch */
+  AUTOCOMMIT_FETCH(
+      "autocommitFetch",
+      "true",
+      "When true and server supports polar_enable_autocommit_cursor, use server-side cursor"
+          + " (fetchSize) even in autoCommit mode. The server materializes remaining rows into a"
+          + " holdable cursor so clients can fetch in batches without holding a transaction open.",
+      false,
+      new String[] {"true", "false"}),
+
   /**
    * Specifies what the driver should do if a query fails. In {@code autosave=always} mode, JDBC driver sets a savepoint before each query,
    * and rolls back to that savepoint in case of failure. In {@code autosave=never} mode (default), no savepoint dance is made ever.

@@ -21,6 +21,7 @@ import com.aliyun.polardb2.core.QueryExecutor;
 import com.aliyun.polardb2.core.ReplicationProtocol;
 import com.aliyun.polardb2.core.ResultHandlerBase;
 import com.aliyun.polardb2.core.ServerVersion;
+import com.aliyun.polardb2.core.SetupQueryRunner;
 import com.aliyun.polardb2.core.SqlCommand;
 import com.aliyun.polardb2.core.TransactionState;
 import com.aliyun.polardb2.core.TypeInfo;
@@ -214,6 +215,8 @@ public class PgConnection implements BaseConnection {
   private boolean callFunctionMode = false;
   private boolean forceDriverType = false;
   private boolean allowSelectInExecuteUpdate = false;
+  private boolean autocommitFetch = false;
+  private boolean serverSupportsAutocommitCursor = false;
   /* POLAR DIFF END */
 
   // Current warnings; there might be more on queryExecutor too.
@@ -288,6 +291,18 @@ public class PgConnection implements BaseConnection {
 
     // Now make the initial connection and set up local state
     this.queryExecutor = ConnectionFactory.openConnection(hostSpecs, info);
+
+    // POLAR: Probe server support for autocommit cursor (holdable portal on suspend).
+    // If the GUC does not exist (old kernel), we silently fall back.
+    if (this.autocommitFetch) {
+      try {
+        SetupQueryRunner.run(queryExecutor, "SET polar_enable_autocommit_cursor = on", false);
+        this.serverSupportsAutocommitCursor = true;
+      } catch (SQLException e) {
+        // SQLSTATE 42704 = unrecognized_configuration_parameter (old kernel)
+        this.serverSupportsAutocommitCursor = false;
+      }
+    }
 
     // WARNING for unsupported servers (8.1 and lower are not supported)
     if (LOGGER.isLoggable(Level.WARNING) && !haveMinimumServerVersion(ServerVersion.v8_2)) {
@@ -538,6 +553,7 @@ public class PgConnection implements BaseConnection {
     this.callFunctionMode = PGProperty.CALL_FUNCTION_MODE.getBoolean(info);
     this.forceDriverType = PGProperty.FORCE_DRIVER_TYPE.getBoolean(info);
     this.allowSelectInExecuteUpdate = PGProperty.ALLOW_SELECT_IN_EXECUTE_UPDATE.getBoolean(info);
+    this.autocommitFetch = PGProperty.AUTOCOMMIT_FETCH.getBoolean(info);
   }
 
   @Deprecated
@@ -2444,6 +2460,11 @@ public class PgConnection implements BaseConnection {
   @Override
   public boolean callFunctionMode() {
     return callFunctionMode;
+  }
+
+  @Override
+  public boolean isAutocommitFetchEnabled() {
+    return autocommitFetch && serverSupportsAutocommitCursor;
   }
 
   @Override

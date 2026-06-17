@@ -222,6 +222,15 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
   void fetch(ResultCursor cursor, ResultHandler handler, int fetchSize, boolean adaptiveFetch) throws SQLException;
 
   /**
+   * Immediately close a server-side portal and release associated resources (e.g. holdable cursor
+   * tuplestore). Sends Close('P', portalName) + Sync and waits for CloseComplete.
+   *
+   * @param cursor the ResultCursor (Portal) to close
+   * @throws SQLException if close fails
+   */
+  void closePortal(ResultCursor cursor) throws SQLException;
+
+  /**
    * Create an unparameterized Query object suitable for execution by this QueryExecutor. The
    * provided query string is not parsed for parameter placeholders ('?' characters), and the
    * {@link Query#createParameterList} of the returned object will always return an empty

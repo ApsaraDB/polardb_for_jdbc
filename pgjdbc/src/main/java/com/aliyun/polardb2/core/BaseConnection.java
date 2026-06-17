@@ -362,6 +362,14 @@ public interface BaseConnection extends PGConnection, Connection {
   boolean callFunctionMode();
 
   /**
+   * Returns true when autocommitFetch is enabled AND the server supports
+   * polar_enable_autocommit_cursor (holdable portal on suspend).
+   *
+   * @return whether autocommit cursor fetch is active for this connection
+   */
+  boolean isAutocommitFetchEnabled();
+
+  /**
    * Returns isForceDriverType connection setting.
    *
    * @return isForceDriverType setting

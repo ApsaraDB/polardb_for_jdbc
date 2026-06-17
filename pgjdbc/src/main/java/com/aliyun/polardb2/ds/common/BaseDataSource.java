@@ -1896,6 +1896,14 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
     return PGProperty.AUTO_COMMIT.getBoolean(properties);
   }
 
+  public void setAutocommitFetch(boolean autocommitFetch) {
+    PGProperty.AUTOCOMMIT_FETCH.set(properties, autocommitFetch);
+  }
+
+  public boolean isAutocommitFetch() {
+    return PGProperty.AUTOCOMMIT_FETCH.getBoolean(properties);
+  }
+
   public void setExtraFloatDigits(String extraFloatDigits) {
     PGProperty.EXTRA_FLOAT_DIGITS.set(properties, extraFloatDigits);
   }

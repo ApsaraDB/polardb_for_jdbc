@@ -2312,7 +2312,17 @@ public class PgResultSet implements ResultSet, com.aliyun.polardb2.PGRefCursorRe
     JdbcBlackHole.close(deleteStatement);
     deleteStatement = null;
     if (cursor != null) {
-      cursor.close();
+      // POLAR: For autocommitFetch holdable portals, immediately send Close+Sync
+      // to release the server-side tuplestore/temp files without waiting for GC.
+      if (connection.isAutocommitFetchEnabled() && connection.getAutoCommit()) {
+        try {
+          connection.getQueryExecutor().closePortal(cursor);
+        } catch (SQLException ignore) {
+          // Best-effort: if close fails (e.g. connection already broken), just fall through.
+        }
+      } else {
+        cursor.close();
+      }
       cursor = null;
     }
     closeRefCursor();

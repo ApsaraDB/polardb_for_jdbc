@@ -439,7 +439,8 @@ public class PgStatement implements Statement, BaseStatement {
     /* POLAR: if polarMaxFetchSize is set, use this flag to enable usePortal */
     int polarMaxFetchSize = connection.defaultPolarMaxFetchSize();
     if ((fetchSize > 0  || polarMaxFetchSize > 0) && !wantsScrollableResultSet()
-        && (!connection.getAutoCommit() || polarMaxFetchSize > 0)
+        && (!connection.getAutoCommit() || polarMaxFetchSize > 0
+            || connection.isAutocommitFetchEnabled())
         && !wantsHoldableResultSet()) {
       flags |= QueryExecutor.QUERY_FORWARD_CURSOR;
     }
@@ -502,8 +503,18 @@ public class PgStatement implements Statement, BaseStatement {
     }
     try {
       startTimer();
+      /* POLAR: In autocommitFetch mode, pass fetchSize even when autoCommit=true
+       * so the server creates a holdable cursor for batch fetching. */
+      int effectiveFetchSize;
+      if (!connection.getAutoCommit()) {
+        effectiveFetchSize = fetchSize;
+      } else if (connection.isAutocommitFetchEnabled() && fetchSize > 0) {
+        effectiveFetchSize = fetchSize;
+      } else {
+        effectiveFetchSize = 0;
+      }
       connection.getQueryExecutor().execute(queryToExecute, queryParameters, handler, maxrows,
-          connection.getAutoCommit() ? 0 : fetchSize, flags, adaptiveFetch);
+          effectiveFetchSize, flags, adaptiveFetch);
     } finally {
       killTimerTask();
     }
