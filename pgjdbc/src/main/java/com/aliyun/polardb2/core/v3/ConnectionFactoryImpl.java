@@ -876,7 +876,15 @@ public class ConnectionFactoryImpl extends ConnectionFactory {
                             "The server requested SCRAM-based authentication, but the password is an empty string."),
                         PSQLState.CONNECTION_REJECTED);
                   }
-                  return new ScramAuthenticator(password, pgStream, info);
+                  // CVE-2026-42198: cap PBKDF2 iteration count
+                  int scramMaxIterations = PGProperty.SCRAM_MAX_ITERATIONS.getInt(info);
+                  if (scramMaxIterations < 0) {
+                    throw new PSQLException(
+                        GT.tr("{0} must be a non-negative integer",
+                            PGProperty.SCRAM_MAX_ITERATIONS.getName()),
+                        PSQLState.INVALID_PARAMETER_VALUE);
+                  }
+                  return new ScramAuthenticator(password, pgStream, info, scramMaxIterations);
                 });
                 scramAuthenticator.handleAuthenticationSASL();
                 break;

@@ -1676,6 +1676,14 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
     PGProperty.REWRITE_BATCHED_INSERTS.set(properties, reWrite);
   }
 
+  public int getScramMaxIterations() {
+    return PGProperty.SCRAM_MAX_ITERATIONS.getIntNoCheck(properties);
+  }
+
+  public void setScramMaxIterations(int scramMaxIterations) {
+    PGProperty.SCRAM_MAX_ITERATIONS.set(properties, scramMaxIterations);
+  }
+
   /**
    * @return boolean indicating property is enabled or not.
    * @see PGProperty#HIDE_UNPRIVILEGED_OBJECTS

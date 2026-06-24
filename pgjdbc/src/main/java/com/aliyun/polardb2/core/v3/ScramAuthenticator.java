@@ -5,6 +5,7 @@
 
 package com.aliyun.polardb2.core.v3;
 
+import com.aliyun.polardb2.PGProperty;
 import com.aliyun.polardb2.core.PGStream;
 import com.aliyun.polardb2.util.GT;
 import com.aliyun.polardb2.util.PSQLException;
@@ -13,6 +14,7 @@ import com.aliyun.polardb2.util.PSQLState;
 import com.ongres.scram.client.ScramClient;
 import com.ongres.scram.common.ClientFinalMessage;
 import com.ongres.scram.common.ClientFirstMessage;
+import com.ongres.scram.common.ServerFirstMessage;
 import com.ongres.scram.common.StringPreparation;
 import com.ongres.scram.common.exception.ScramException;
 import com.ongres.scram.common.util.TlsServerEndpoint;
@@ -37,9 +39,12 @@ final class ScramAuthenticator {
   private static final Logger LOGGER = Logger.getLogger(ScramAuthenticator.class.getName());
   private final PGStream pgStream;
   private final ScramClient scramClient;
+  private final int maxIterations;
 
-  ScramAuthenticator(char[] password, PGStream pgStream, Properties info) throws PSQLException {
+  ScramAuthenticator(char[] password, PGStream pgStream, Properties info,
+      int maxIterations) throws PSQLException {
     this.pgStream = pgStream;
+    this.maxIterations = maxIterations;
     this.scramClient = initializeScramClient(password, pgStream, info);
   }
 
@@ -144,13 +149,24 @@ final class ScramAuthenticator {
   void handleAuthenticationSASLContinue(int length) throws IOException, PSQLException {
     String receivedServerFirstMessage = pgStream.receiveString(length);
     LOGGER.log(Level.FINEST, " <=BE AuthenticationSASLContinue( {0} )", receivedServerFirstMessage);
+    ServerFirstMessage serverFirstMessage;
     try {
-      scramClient.serverFirstMessage(receivedServerFirstMessage);
+      serverFirstMessage = scramClient.serverFirstMessage(receivedServerFirstMessage);
     } catch (ScramException | IllegalStateException | IllegalArgumentException e) {
       throw new PSQLException(
           GT.tr("SCRAM authentication failed: {0}", e.getMessage()),
           PSQLState.CONNECTION_REJECTED,
           e);
+    }
+    // CVE-2026-42198: Reject excessively large iteration counts to prevent client-side DoS.
+    int iterations = serverFirstMessage.getIterationCount();
+    if (maxIterations > 0 && iterations > maxIterations) {
+      throw new PSQLException(
+          GT.tr("Server requested {0} SCRAM PBKDF2 iterations, which exceeds the "
+              + "client-side limit of {1}. If you trust this server, raise the "
+              + "{2} connection property.",
+              iterations, maxIterations, PGProperty.SCRAM_MAX_ITERATIONS.getName()),
+          PSQLState.CONNECTION_REJECTED);
     }
     ClientFinalMessage clientFinalMessage = scramClient.clientFinalMessage();
     LOGGER.log(Level.FINEST, " FE=> SASLResponse( {0} )", clientFinalMessage);

@@ -753,6 +753,19 @@ public enum PGProperty {
       "Enable optimization to rewrite and collapse compatible INSERT statements that are batched."),
 
   /**
+   * Maximum PBKDF2 iteration count accepted from the server during SCRAM authentication.
+   * A value of {@code 0} disables the check. Defaults to {@code 100000}.
+   * <p>This mitigates CVE-2026-42198 where a malicious server could instruct the driver to
+   * perform an extremely large number of PBKDF2 iterations, causing client-side denial of service.</p>
+   */
+  SCRAM_MAX_ITERATIONS(
+      "scramMaxIterations",
+      "100000",
+      "Maximum PBKDF2 iteration count accepted from the server during SCRAM authentication."
+          + " A value of 0 disables the check."
+          + " Increase only if you trust the server and it legitimately requires more iterations."),
+
+  /**
    * Socket write buffer size (SO_SNDBUF). A value of {@code -1}, which is the default, means system
    * default.
    */
