@@ -1880,6 +1880,22 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
     PGProperty.MAP_DATE_TO_TIMESTAMP.set(properties, mapDateToTimestamp);
   }
 
+  public boolean isLowerCaseLogin() {
+    return PGProperty.LOWER_CASE_LOGIN.getBoolean(properties);
+  }
+
+  public void setLowerCaseLogin(boolean lowerCaseLogin) {
+    PGProperty.LOWER_CASE_LOGIN.set(properties, lowerCaseLogin);
+  }
+
+  public boolean isProxyUserLogin() {
+    return PGProperty.PROXY_USER_LOGIN.getBoolean(properties);
+  }
+
+  public void setProxyUserLogin(boolean proxyUserLogin) {
+    PGProperty.PROXY_USER_LOGIN.set(properties, proxyUserLogin);
+  }
+
   public String getDriverPrefix() {
     return PGProperty.DRIVER_PREFIX.getOrDefault(properties);
   }

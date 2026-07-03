@@ -530,6 +530,16 @@ public enum PGProperty {
       "false",
       "When connections that are not explicitly closed are garbage collected, log the stacktrace from the opening of the connection to trace the leak source"),
 
+  /* POLAR: Oracle-compatible login - convert username to lower case */
+  LOWER_CASE_LOGIN(
+      "lowerCaseLogin",
+      "true",
+      "Convert the login username to lower case for both the startup message and"
+          + " password hashing (MD5). Aligns with Oracle/PolarDB behavior where"
+          + " unquoted identifiers are case-insensitive.",
+      false,
+      new String[] {"true", "false"}),
+
   /* POLAR */
   MAP_DATE_TO_TIMESTAMP(
       "mapDateToTimestamp",
@@ -670,6 +680,16 @@ public enum PGProperty {
       "Force use of a particular protocol version when connecting, currently only version 3 is supported.",
       false,
       new String[] {"3"}),
+
+  /* POLAR: Oracle proxy user login */
+  PROXY_USER_LOGIN(
+      "proxyUserLogin",
+      "true",
+      "Support Oracle-style proxy login format user[proxyUser]. The full string"
+          + " (e.g. abc[def]) is sent in the startup message, but only the primary"
+          + " user (abc) is used for MD5 password hashing.",
+      false,
+      new String[] {"true", "false"}),
 
   /**
    * Quote returning columns.

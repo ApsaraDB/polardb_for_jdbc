@@ -45,6 +45,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
@@ -129,6 +130,25 @@ public class ConnectionFactoryImpl extends ConnectionFactory {
       throw new PSQLException(GT.tr("Database cannot be null"), PSQLState.INVALID_NAME);
     }
 
+    // POLAR: Login username transformation
+    String startupUser = user;  // sent in StartupMessage (full text, possibly with proxy suffix)
+    String authUser = user;     // used for MD5 password hashing (primary user only)
+
+    // Step 1: lowercase conversion - only when the username is ALL UPPERCASE (pure uppercase).
+    // Mixed-case usernames (e.g. "Admin") are left unchanged.
+    if (PGProperty.LOWER_CASE_LOGIN.getBoolean(info) && isAllUpperCase(user)) {
+      startupUser = user.toLowerCase(Locale.ROOT);
+      authUser = startupUser;
+    }
+
+    // Step 2: proxy user extraction - abc[def] -> authUser=abc, startupUser keeps abc[def]
+    if (PGProperty.PROXY_USER_LOGIN.getBoolean(info)) {
+      int bracketIdx = startupUser.indexOf('[');
+      if (bracketIdx > 0 && startupUser.endsWith("]")) {
+        authUser = startupUser.substring(0, bracketIdx);
+      }
+    }
+
     PGStream newStream = new PGStream(socketFactory, hostSpec, connectTimeout);
     try {
       // Set the socket timeout if the "socketTimeout" property has been set.
@@ -205,11 +225,11 @@ public class ConnectionFactoryImpl extends ConnectionFactory {
         newStream.setNetworkTimeout(socketTimeout * 1000);
       }
 
-      List<StartupParam> paramList = getParametersForStartup(user, database, info);
+      List<StartupParam> paramList = getParametersForStartup(startupUser, database, info);
       sendStartupPacket(newStream, paramList);
 
       // Do authentication (until AuthenticationOk).
-      doAuthentication(newStream, hostSpec.getHost(), user, info);
+      doAuthentication(newStream, hostSpec.getHost(), authUser, info);
 
       return newStream;
     } catch (Exception e) {
@@ -1006,5 +1026,24 @@ public class ConnectionFactoryImpl extends ConnectionFactory {
     Tuple nonNullResults = castNonNull(results);
     String queriedTransactionReadonly = queryExecutor.getEncoding().decode(castNonNull(nonNullResults.get(0)));
     return queriedTransactionReadonly.equalsIgnoreCase("off");
+  }
+
+  /**
+   * Returns true if the string contains at least one letter and ALL letters are uppercase.
+   * Non-letter characters (digits, brackets, underscores, etc.) are ignored.
+   * Examples: "ADMIN" -> true, "ABC[DEF]" -> true, "Admin" -> false, "admin" -> false, "123" -> false.
+   */
+  private static boolean isAllUpperCase(String s) {
+    boolean hasLetter = false;
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (Character.isLetter(c)) {
+        hasLetter = true;
+        if (Character.isLowerCase(c)) {
+          return false;
+        }
+      }
+    }
+    return hasLetter;
   }
 }
