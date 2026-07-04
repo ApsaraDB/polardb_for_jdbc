@@ -85,6 +85,9 @@ public class TypeInfoCache implements TypeInfo {
   private @Nullable PreparedStatement findCollectionByElementStmt;
   // POLAR: prepared statement for SELECT typcategory FROM pg_type WHERE oid = ?
   private @Nullable PreparedStatement getTypeCategoryStatement;
+  // POLAR: prepared statement for synonym resolution
+  private @Nullable PreparedStatement resolveSynonymStatement;
+  private boolean synonymLookupSupported = true; // set to false if all_synonyms doesn't exist
   private final ResourceLock lock = new ResourceLock();
 
   // basic pg types info:
@@ -558,10 +561,61 @@ public class TypeInfoCache implements TypeInfo {
         oidToPgName.put(oid, internalName);
         pgNameToOid.put(internalName, oid);
       }
-      pgNameToOid.put(pgTypeName, oid);
       rs.close();
 
+      // POLAR: Synonym fallback — if pg_type lookup returned nothing, try resolving
+      // the name through Oracle-compatible synonyms (all_synonyms view).
+      // This supports the pattern: CREATE SYNONYM syn_name FOR real_type_name;
+      if (oid == Oid.UNSPECIFIED) {
+        String resolvedName = resolveSynonym(pgTypeName);
+        if (resolvedName != null) {
+          // Recurse with the resolved real type name
+          oid = getPGType(resolvedName);
+        }
+      }
+
+      pgNameToOid.put(pgTypeName, oid);
+
       return oid;
+    }
+  }
+
+  /**
+   * POLAR: Resolve a synonym name to the real type name it points to.
+   * Uses Oracle-compatible all_synonyms view. If the view doesn't exist
+   * (non-Oracle mode), this method is permanently disabled for the connection.
+   *
+   * @param synonymName the synonym name to resolve
+   * @return the real type name, or null if not a synonym / view unavailable
+   */
+  private @Nullable String resolveSynonym(String synonymName) throws SQLException {
+    if (!synonymLookupSupported) {
+      return null;
+    }
+    try {
+      if (resolveSynonymStatement == null) {
+        // all_synonyms stores names in UPPER CASE (Oracle convention).
+        // Use LOWER() on both sides for case-insensitive matching.
+        String sql = "SELECT LOWER(table_name) FROM all_synonyms"
+            + " WHERE LOWER(synonym_name) = ? LIMIT 1";
+        resolveSynonymStatement = conn.prepareStatement(sql);
+      }
+      resolveSynonymStatement.setString(1, synonymName.toLowerCase(Locale.ROOT));
+      if (!((BaseStatement) resolveSynonymStatement)
+          .executeWithFlags(QueryExecutor.QUERY_SUPPRESS_BEGIN)) {
+        return null;
+      }
+      ResultSet rs = castNonNull(resolveSynonymStatement.getResultSet());
+      String resolved = null;
+      if (rs.next()) {
+        resolved = rs.getString(1);
+      }
+      rs.close();
+      return resolved;
+    } catch (SQLException e) {
+      // all_synonyms view doesn't exist — disable synonym lookup permanently
+      synonymLookupSupported = false;
+      return null;
     }
   }
 
