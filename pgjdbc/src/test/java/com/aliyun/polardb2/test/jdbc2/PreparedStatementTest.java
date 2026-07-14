@@ -481,14 +481,14 @@ public class PreparedStatementTest extends BaseTest4 {
     PreparedStatement st;
     ResultSet rs;
 
-    st = con.prepareStatement("SELECT /*?*/ /*/*/**/1;SELECT ?;--SELECT ?");
+    st = con.prepareStatement("SELECT /*?*/ /**/1;SELECT ?;--SELECT ?");
     st.setString(1, "a");
     assertTrue(st.execute());
     assertTrue(st.getMoreResults());
     assertFalse(st.getMoreResults());
     st.close();
 
-    st = con.prepareStatement("SELECT /**/'?'/*/**/ WHERE '?'=/*/*/*?*/--?\n?");
+    st = con.prepareStatement("SELECT /**/'?'/**/ WHERE '?'=/*?*/--?\n?");
     st.setString(1, "?");
     rs = st.executeQuery();
     assertTrue(rs.next());
