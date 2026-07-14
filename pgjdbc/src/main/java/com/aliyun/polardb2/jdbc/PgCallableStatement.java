@@ -1081,7 +1081,17 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public @Nullable Clob getClob(int i) throws SQLException {
-    throw Driver.notImplemented(this.getClass(), "getClob(int)");
+    Object result = getCallResult(i);
+    if (result == null) {
+      return null;
+    }
+    // Already a Clob (e.g. large-object based) -> return as-is
+    if (result instanceof Clob) {
+      return (Clob) result;
+    }
+    // Oracle-compat clobAsText path: OUT param came back as text/String.
+    // Wrap into a text-backed Clob, consistent with PgResultSet.getClob().
+    return new PgClobText(result.toString());
   }
 
   public @Nullable Object getObjectImpl(int i, @Nullable Map<String, Class<?>> map) throws SQLException {
