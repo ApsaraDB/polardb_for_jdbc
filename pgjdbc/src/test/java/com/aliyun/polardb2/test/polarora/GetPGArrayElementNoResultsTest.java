@@ -20,6 +20,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.math.BigDecimal;
 import java.sql.Array;
 import java.sql.CallableStatement;
 import java.sql.Connection;
@@ -255,14 +256,15 @@ public class GetPGArrayElementNoResultsTest {
 
       assertTrue(elements[0] instanceof Struct);
       Object[] a0 = ((Struct) elements[0]).getAttributes();
-      assertEquals("12345", a0[0]);
+      // cust_id is NUMBER -> restored to BigDecimal (Oracle-compatible)
+      assertEquals(0, new BigDecimal("12345").compareTo((BigDecimal) a0[0]));
       assertEquals("POL001", a0[1]);
       assertEquals("PRIMARY", a0[2]);
       assertNotNull(a0[3]);
 
       assertTrue(elements[1] instanceof Struct);
       Object[] a1 = ((Struct) elements[1]).getAttributes();
-      assertEquals("12346", a1[0]);
+      assertEquals(0, new BigDecimal("12346").compareTo((BigDecimal) a1[0]));
       assertEquals("SECONDARY", a1[2]);
     }
   }
@@ -282,7 +284,7 @@ public class GetPGArrayElementNoResultsTest {
       assertTrue(elements[0] instanceof Struct);
 
       Object[] attrs = ((Struct) elements[0]).getAttributes();
-      assertEquals("99", attrs[0]);
+      assertEquals(0, new BigDecimal("99").compareTo((BigDecimal) attrs[0]));
       assertEquals("SINGLE", attrs[1]);
       assertEquals("ONLY", attrs[2]);
     }
@@ -303,7 +305,7 @@ public class GetPGArrayElementNoResultsTest {
       // Element 1: only cust_id set, rest NULL
       Object[] a0 = ((Struct) elements[0]).getAttributes();
       assertEquals(4, a0.length);
-      assertEquals("100", a0[0]);
+      assertEquals(0, new BigDecimal("100").compareTo((BigDecimal) a0[0]));
       assertNull(a0[1]);
       assertNull(a0[2]);
       assertNull(a0[3]);
@@ -317,7 +319,7 @@ public class GetPGArrayElementNoResultsTest {
 
       // Element 3: all filled
       Object[] a2 = ((Struct) elements[2]).getAttributes();
-      assertEquals("300", a2[0]);
+      assertEquals(0, new BigDecimal("300").compareTo((BigDecimal) a2[0]));
       assertEquals("P003", a2[1]);
       assertNotNull(a2[3]);
     }
@@ -402,7 +404,7 @@ public class GetPGArrayElementNoResultsTest {
       assertEquals(1, elements.length);
 
       Object[] attrs = ((Struct) elements[0]).getAttributes();
-      assertEquals("555", attrs[0]);
+      assertEquals(0, new BigDecimal("555").compareTo((BigDecimal) attrs[0]));
       assertEquals("FETCHED", attrs[1]);
       assertEquals("OUT", attrs[2]);
     }

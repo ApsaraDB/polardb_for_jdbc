@@ -486,6 +486,7 @@ final class ArrayDecoding {
       // Wrap plain PGobject as PgCompositeObject for Struct compatibility
       PgCompositeObject comp = new PgCompositeObject();
       comp.setType(typeName);
+      comp.setConnection(connection);
       if (result instanceof com.aliyun.polardb2.util.PGobject) {
         comp.setValue(((com.aliyun.polardb2.util.PGobject) result).getValue());
       }
@@ -496,6 +497,7 @@ final class ArrayDecoding {
     Object parseValue(String stringVal, BaseConnection connection) throws SQLException {
       PgCompositeObject comp = new PgCompositeObject();
       comp.setType(typeName);
+      comp.setConnection(connection);
       comp.setValue(stringVal);
       return comp;
     }

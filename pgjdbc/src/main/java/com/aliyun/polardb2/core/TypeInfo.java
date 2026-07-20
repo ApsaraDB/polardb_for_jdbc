@@ -59,6 +59,16 @@ public interface TypeInfo {
   @Nullable String getPGType(int oid) throws SQLException;
 
   /**
+   * POLAR: Return the field type OIDs of a composite type, ordered by attnum.
+   * Used to restore composite (record) literal fields to their proper Java types.
+   *
+   * @param compositeOid the OID of the composite type
+   * @return array of field type OIDs ordered by attnum, or null if not composite
+   * @throws SQLException if an error occurs when querying attribute metadata
+   */
+  int @Nullable [] getCompositeFieldTypeOids(int compositeOid) throws SQLException;
+
+  /**
    * Look up the oid of an array's base type given the array's type oid.
    *
    * @param oid the array type's OID

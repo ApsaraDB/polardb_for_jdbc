@@ -822,7 +822,9 @@ public class PgConnection implements BaseConnection {
          * getResultSet(), getObject()) can be cast to both PGobject and Struct. */
         int sqlType = typeCache.getSQLType(type);
         if (sqlType == java.sql.Types.STRUCT) {
-          obj = new PgCompositeObject();
+          PgCompositeObject comp = new PgCompositeObject();
+          comp.setConnection(this);
+          obj = comp;
         } else {
           obj = new PGobject();
         }

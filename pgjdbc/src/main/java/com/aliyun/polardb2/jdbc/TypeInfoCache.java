@@ -88,6 +88,11 @@ public class TypeInfoCache implements TypeInfo {
   // POLAR: prepared statement for synonym resolution
   private @Nullable PreparedStatement resolveSynonymStatement;
   private boolean synonymLookupSupported = true; // set to false if all_synonyms doesn't exist
+  // POLAR: composite type OID -> field type OIDs (ordered by attnum). Cache for
+  // getCompositeFieldTypeOids so composite record fields can be type-restored.
+  private final Map<Integer, int @Nullable []> oidToCompositeFieldOids =
+      new ConcurrentHashMap<Integer, int @Nullable []>();
+  private @Nullable PreparedStatement getCompositeFieldOidsStatement;
   private final ResourceLock lock = new ResourceLock();
 
   // basic pg types info:
@@ -616,6 +621,54 @@ public class TypeInfoCache implements TypeInfo {
       // all_synonyms view doesn't exist — disable synonym lookup permanently
       synonymLookupSupported = false;
       return null;
+    }
+  }
+
+  /**
+   * POLAR: Return the field type OIDs of a composite type, ordered by attnum.
+   * Used to restore each field of a composite (record) literal to its proper
+   * Java type (NUMBER -&gt; BigDecimal, DATE/TIMESTAMP -&gt; Timestamp, etc.),
+   * matching Oracle ojdbc behavior for Struct.getAttributes().
+   *
+   * @param compositeOid the OID of the composite type
+   * @return array of field type OIDs ordered by attnum, or {@code null} if the
+   *         type is not composite or has no attributes
+   */
+  public int @Nullable [] getCompositeFieldTypeOids(int compositeOid) throws SQLException {
+    if (compositeOid == Oid.UNSPECIFIED) {
+      return null;
+    }
+    int @Nullable [] cached = oidToCompositeFieldOids.get(compositeOid);
+    if (cached != null) {
+      return cached.length == 0 ? null : cached;
+    }
+    try (ResourceLock ignore = lock.obtain()) {
+      if (getCompositeFieldOidsStatement == null) {
+        String sql = "SELECT a.atttypid FROM pg_catalog.pg_attribute a"
+            + " JOIN pg_catalog.pg_type t ON t.typrelid = a.attrelid"
+            + " WHERE t.oid = ? AND a.attnum > 0 AND NOT a.attisdropped"
+            + " ORDER BY a.attnum";
+        getCompositeFieldOidsStatement = conn.prepareStatement(sql);
+      }
+      getCompositeFieldOidsStatement.setInt(1, compositeOid);
+      if (!((BaseStatement) getCompositeFieldOidsStatement)
+          .executeWithFlags(QueryExecutor.QUERY_SUPPRESS_BEGIN)) {
+        throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
+      }
+      ResultSet rs = castNonNull(getCompositeFieldOidsStatement.getResultSet());
+      java.util.List<Integer> oids = new java.util.ArrayList<Integer>();
+      while (rs.next()) {
+        oids.add((int) rs.getLong(1));
+      }
+      rs.close();
+
+      int[] result = new int[oids.size()];
+      for (int i = 0; i < result.length; i++) {
+        result[i] = oids.get(i);
+      }
+      // Cache even empty result (as zero-length) to avoid repeated queries.
+      oidToCompositeFieldOids.put(compositeOid, result);
+      return result.length == 0 ? null : result;
     }
   }
 
