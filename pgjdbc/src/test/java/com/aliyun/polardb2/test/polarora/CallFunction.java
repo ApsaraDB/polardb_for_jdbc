@@ -7,6 +7,7 @@ package com.aliyun.polardb2.test.polarora;
 import com.aliyun.polardb2.test.TestUtil;
 
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -484,6 +485,26 @@ public class CallFunction {
 
       assert cs.getInt(1) == 42 : "Expected 42 but got " + cs.getObject(1);
       assert "hello_suffix".equals(cs.getString(3)) : "Expected 'hello_suffix' but got " + cs.getObject(3);
+    }
+  }
+
+  /**
+   * POLAR: A top-level DECLARE section is also an anonymous DO block.
+   * Verifies that its OUT placeholders are handled without the deprecated
+   * unnamed-procedure wrapper.
+   */
+  @Test
+  public void testDeclareDoBlockWithOutParameter() throws Exception {
+    try (CallableStatement cs = conn.prepareCall(
+        "declare v_date date; begin "
+            + "v_date := to_date(?, 'yyyy-mm-dd'); ? := ? + ?; end;")) {
+      cs.setString(1, "2026-07-23");
+      cs.registerOutParameter(2, Types.NUMERIC);
+      cs.setInt(3, 40);
+      cs.setInt(4, 2);
+      cs.execute();
+
+      Assert.assertEquals("DECLARE anonymous block OUT value", 42, cs.getInt(2));
     }
   }
 

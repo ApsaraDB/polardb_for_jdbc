@@ -1448,10 +1448,15 @@ public class Parser {
      * For $N-style, we count the max $N index. For ?-style, paramCount=0 and
      * actual count comes from preparedParameters after parseJdbcSql converts ? to $N.
      */
-    Pattern beginEndPattern = Pattern.compile("^\\s*begin(.*)end\\s*;?\\s*$", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
-    Matcher beginEndMatcher = beginEndPattern.matcher(jdbcSql);
-    if (beginEndMatcher.matches()) {
-      String inner = beginEndMatcher.group(1).trim();
+    /* A PL/SQL anonymous block may start directly with BEGIN or with a DECLARE section
+     * followed by BEGIN. Both forms are executed by the server as DO blocks and have the
+     * same positional INOUT parameter semantics. */
+    Pattern anonymousBlockPattern = Pattern.compile(
+        "^\\s*(?:begin\\b|declare\\b.*?\\bbegin\\b)(.*)end\\s*;?\\s*$",
+        Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+    Matcher anonymousBlockMatcher = anonymousBlockPattern.matcher(jdbcSql);
+    if (anonymousBlockMatcher.matches()) {
+      String inner = anonymousBlockMatcher.group(1).trim();
 
       // Check for $N-style parameters (already converted to $N)
       Pattern dollarPattern = Pattern.compile("\\$(\\d+)");
