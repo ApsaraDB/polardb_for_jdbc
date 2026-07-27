@@ -27,6 +27,8 @@ import com.aliyun.polardb2.hostchooser.HostStatus;
 import com.aliyun.polardb2.jdbc.GSSEncMode;
 import com.aliyun.polardb2.jdbc.SslMode;
 import com.aliyun.polardb2.plugin.AuthenticationRequestType;
+import com.aliyun.polardb2.polarora.OracleNlsLocaleMapper;
+import com.aliyun.polardb2.polarora.PolarDriverPrefix;
 import com.aliyun.polardb2.sspi.ISSPIClient;
 import com.aliyun.polardb2.util.GT;
 import com.aliyun.polardb2.util.HostSpec;
@@ -954,7 +956,10 @@ public class ConnectionFactoryImpl extends ConnectionFactory {
       throws SQLException {
     String assumeMinServerVersion = PGProperty.ASSUME_MIN_SERVER_VERSION.getOrDefault(info);
     if (Utils.parseServerVersionStr(assumeMinServerVersion) >= ServerVersion.v9_0.getVersionNum()) {
-      // We already sent the parameter values in the StartupMessage so skip this
+      // We already sent the parameter values in the StartupMessage so skip this.
+      // POLAR: But the Oracle-compatible NLS locale initialization must NOT be skipped by the
+      // assumeMinServerVersion early-return, so run it here before returning.
+      initOracleNlsLocale(queryExecutor, info);
       return;
     }
 
@@ -984,6 +989,112 @@ public class ConnectionFactoryImpl extends ConnectionFactory {
 
     if (PGProperty.GROUP_STARTUP_PARAMETERS.getBoolean(info) && dbVersion >= ServerVersion.v9_0.getVersionNum()) {
       SetupQueryRunner.run(queryExecutor, "COMMIT", false);
+    }
+
+    // POLAR: Oracle JDBC Thin compatible NLS locale initialization.
+    initOracleNlsLocale(queryExecutor, info);
+  }
+
+  /**
+   * POLAR: On each new physical connection, initialize the session {@code nls_language}/
+   * {@code nls_territory} from the JVM FORMAT {@link Locale}, mimicking the Oracle JDBC Thin driver.
+   *
+   * <p>Behavior:</p>
+   * <ul>
+   *   <li>Disabled by default; must be explicitly enabled via {@code nlsLocaleInit=true}.</li>
+   *   <li>Only applies to {@code jdbc:polardb:}/{@code jdbc:polardb2:} URLs; plain
+   *       {@code jdbc:postgresql:} connections are left unchanged.</li>
+   *   <li>The FORMAT Locale is read for every physical connection and never statically cached;
+   *       the DISPLAY Locale is not consulted.</li>
+   *   <li>If the server kernel does not expose {@code nls_language}/{@code nls_territory} GUCs
+   *       (older kernels), the initialization is skipped silently and no SET is issued.</li>
+   *   <li>Any other failure while setting the GUCs propagates as a connection exception.</li>
+   * </ul>
+   *
+   * <p>TODO(nls-completeness): decompilation of Oracle JDBC 21.3
+   * ({@code oracle.jdbc.driver.T4CTTIoauthenticate}) shows that the ONLY session values it derives
+   * from the JVM Locale are language and territory (via
+   * {@code oracle.sql.converter.CharacterSetMetaData.getNLSLanguage/getNLSTerritory}); it also sets
+   * the non-NLS parameter {@code TIME_ZONE} from the JVM default time zone. Therefore this driver
+   * intentionally sets ONLY {@code nls_language}/{@code nls_territory} here:</p>
+   * <ul>
+   *   <li>{@code TIME_ZONE} is already sent by pgjdbc as the startup {@code TimeZone} parameter
+   *       (see {@link #getParametersForStartup}), so no extra work is needed here.</li>
+   *   <li>All other NLS sub-parameters that appear in Oracle's login protocol
+   *       ({@code NLS_DATE_LANGUAGE}, {@code NLS_SORT}, {@code NLS_COMP}, {@code NLS_CALENDAR},
+   *       {@code NLS_DATE_FORMAT}, {@code NLS_TIME_FORMAT}, {@code NLS_TIMESTAMP_FORMAT},
+   *       {@code NLS_TIME_TZ_FORMAT}, {@code NLS_TIMESTAMP_TZ_FORMAT},
+   *       {@code NLS_NUMERIC_CHARACTERS}, {@code NLS_CURRENCY}, {@code NLS_ISO_CURRENCY},
+   *       {@code NLS_DUAL_CURRENCY}) are NOT set by Oracle JDBC from the Locale either -- Oracle
+   *       derives them server-side from language/territory. Per the design doc, the PolarDB kernel
+   *       is responsible for deriving these (P1); the driver MUST NOT set/derive them. Do not add
+   *       them here unless that design decision changes.</li>
+   * </ul>
+   */
+  private void initOracleNlsLocale(QueryExecutor queryExecutor, Properties info)
+      throws SQLException {
+    // Disabled unless explicitly opted in (similar to oracleCase).
+    String mode = PGProperty.NLS_LOCALE_INIT.getOrDefault(info);
+    if (mode == null || !mode.equalsIgnoreCase("true")) {
+      return;
+    }
+
+    // Only for PolarDB (Oracle compatible) URL prefixes.
+    PolarDriverPrefix prefix = PolarDriverPrefix.forName(PGProperty.DRIVER_PREFIX.getOrDefault(info));
+    if (prefix != PolarDriverPrefix.POLARDB && prefix != PolarDriverPrefix.POLARDB2) {
+      return;
+    }
+
+    // Read the JVM FORMAT locale for every physical connection (never DISPLAY, never cached).
+    Locale locale = Locale.getDefault(Locale.Category.FORMAT);
+    String language = OracleNlsLocaleMapper.getNlsLanguage(locale);
+    String territory = OracleNlsLocaleMapper.getNlsTerritory(locale);
+
+    // Older kernels may not have nls_language/nls_territory GUCs; if so, do not SET.
+    if (!serverSupportsNlsLocaleGucs(queryExecutor)) {
+      LOGGER.log(Level.FINE,
+          "Server does not expose nls_language/nls_territory GUCs; skipping NLS locale init");
+      return;
+    }
+
+    LOGGER.log(Level.FINE, "Initializing NLS locale from JVM FORMAT locale {0}: "
+        + "nls_language={1}, nls_territory={2}", new Object[]{locale, language, territory});
+
+    // Set nls_language first, then nls_territory, matching the Oracle JDBC ordering.
+    StringBuilder languageSql = new StringBuilder("SET nls_language = '");
+    Utils.escapeLiteral(languageSql, language, queryExecutor.getStandardConformingStrings());
+    languageSql.append("'");
+    SetupQueryRunner.run(queryExecutor, languageSql.toString(), false);
+
+    StringBuilder territorySql = new StringBuilder("SET nls_territory = '");
+    Utils.escapeLiteral(territorySql, territory, queryExecutor.getStandardConformingStrings());
+    territorySql.append("'");
+    SetupQueryRunner.run(queryExecutor, territorySql.toString(), false);
+  }
+
+  /**
+   * POLAR: Detect whether the server exposes both {@code nls_language} and {@code nls_territory}
+   * configuration parameters. Used to stay compatible with older kernels where these GUCs do not
+   * exist (in which case the driver must not attempt to SET them).
+   */
+  private boolean serverSupportsNlsLocaleGucs(QueryExecutor queryExecutor) throws SQLException {
+    Tuple result = SetupQueryRunner.run(queryExecutor,
+        "SELECT count(*) FROM pg_catalog.pg_settings "
+            + "WHERE name IN ('nls_language', 'nls_territory')", true);
+    if (result == null || result.get(0) == null) {
+      return false;
+    }
+    String value;
+    try {
+      value = queryExecutor.getEncoding().decode(castNonNull(result.get(0)));
+    } catch (IOException e) {
+      throw new PSQLException(GT.tr("Unable to decode server response while checking NLS support."),
+          PSQLState.CONNECTION_FAILURE, e);
+    }
+    try {
+      return Integer.parseInt(value.trim()) >= 2;
+    } catch (NumberFormatException e) {
+      return false;
     }
   }
 

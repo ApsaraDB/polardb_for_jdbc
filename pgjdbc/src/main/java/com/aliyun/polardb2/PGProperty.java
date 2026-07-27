@@ -565,6 +565,21 @@ public enum PGProperty {
       new String[]{"true", "false"}),
 
   /**
+   * POLAR: Controls whether the driver initializes the session nls_language/nls_territory from the
+   * JVM FORMAT Locale (Locale.getDefault(Locale.Category.FORMAT)) on each new physical connection,
+   * mimicking the Oracle JDBC Thin driver. Only takes effect for jdbc:polardb:/jdbc:polardb2: URLs.
+   * Disabled by default; set to {@code true} to explicitly opt in (similar to {@code oracleCase}).
+   */
+  NLS_LOCALE_INIT(
+      "nlsLocaleInit",
+      "false",
+      "Initialize session nls_language/nls_territory from the JVM FORMAT Locale on each new "
+          + "physical connection (Oracle JDBC Thin compatible). Only for jdbc:polardb:/jdbc:polardb2: "
+          + "URLs. Disabled by default; set to 'true' to enable.",
+      false,
+      new String[] {"true", "false"}),
+
+  /**
    * POLAR: Strip trailing zeros from NUMERIC/DECIMAL values when converting to string.
    * When enabled, values like 911.000 will be displayed as 911, similar to Oracle NUMBER behavior.
    * Default is true.
