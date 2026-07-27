@@ -14,6 +14,8 @@ import org.junit.Test;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.JDBCType;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.sql.Types;
 import java.util.Properties;
 
@@ -467,6 +469,48 @@ public class CallFunction {
       cs.execute();
 
       assert "test".equals(cs.getString(2)) : "Expected 'test' but got " + cs.getObject(2);
+    }
+  }
+
+  /**
+   * POLAR: DO block whose ? parameters are all IN and where the caller never
+   * invokes registerOutParameter (the MyBatis &lt;select statementType="CALLABLE"&gt;
+   * pattern: BEGIN pkg.proc(p_a =&gt; ?, p_b =&gt; ?); END; with only mode=IN params).
+   * Oracle never exposes a result set for an anonymous block, so execute() must
+   * return false and getResultSet() must be null. Otherwise MyBatis fails with
+   * "A query was run and no Result Maps were found for the Mapped Statement".
+   */
+  @Test
+  public void testDoBlockAllInParamsNoRegisterHidesResultSet() throws Exception {
+    TestUtil.execute(conn, "CREATE TABLE do_test_order_info (req_clob varchar2(4000), req_id number)");
+    try {
+      TestUtil.execute(conn, "CREATE OR REPLACE PROCEDURE do_test_insert_order("
+          + "p_request_clob IN varchar2, p_oas_request_id IN number) IS\n"
+          + "BEGIN\n"
+          + "  INSERT INTO do_test_order_info VALUES (p_request_clob, p_oas_request_id);\n"
+          + "END;");
+      try (CallableStatement cs = conn.prepareCall(
+          "BEGIN do_test_insert_order(p_request_clob => ?, p_oas_request_id => ?); END;")) {
+        cs.setString(1, "{\"order\":1}");
+        cs.setLong(2, 42L);
+        boolean hasResultSet = cs.execute();
+        Assert.assertFalse("Anonymous block must not expose a result set (Oracle-compatible)",
+            hasResultSet);
+        Assert.assertNull("getResultSet() must be null after an anonymous block",
+            cs.getResultSet());
+      }
+      // The block must still have executed: verify the inserted row.
+      try (Statement st = conn.createStatement();
+           ResultSet rs = st.executeQuery(
+               "SELECT req_clob, req_id FROM do_test_order_info")) {
+        Assert.assertTrue(rs.next());
+        Assert.assertEquals("{\"order\":1}", rs.getString(1));
+        Assert.assertEquals(42L, rs.getLong(2));
+        Assert.assertFalse(rs.next());
+      }
+    } finally {
+      TestUtil.execute(conn, "DROP PROCEDURE IF EXISTS do_test_insert_order");
+      TestUtil.execute(conn, "DROP TABLE IF EXISTS do_test_order_info");
     }
   }
 
