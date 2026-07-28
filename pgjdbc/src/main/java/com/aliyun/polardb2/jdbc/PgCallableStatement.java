@@ -812,6 +812,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       return ((BigDecimal) result).byteValue();
     }
 
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getByte */
+    if (testReturn == Types.VARCHAR) {
+      BigDecimal num = varcharCallResultAsNumeric(parameterIndex, "Byte", Types.SMALLINT);
+      return num == null ? 0 : num.byteValue();
+    }
+    /* POLAR end */
+
     // fake tiny int with smallint
     Object result = checkIndex(parameterIndex, Types.SMALLINT, "Byte");
 
@@ -835,6 +842,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       return ((BigDecimal) result).shortValue();
     }
 
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getShort */
+    if (testReturn == Types.VARCHAR) {
+      BigDecimal num = varcharCallResultAsNumeric(parameterIndex, "Short", Types.SMALLINT);
+      return num == null ? 0 : num.shortValue();
+    }
+    /* POLAR end */
+
     Object result = checkIndex(parameterIndex, Types.SMALLINT, "Short");
     if (result == null) {
       return 0;
@@ -856,6 +870,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       return ((BigDecimal) result).intValue();
     }
 
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getInt */
+    if (testReturn == Types.VARCHAR) {
+      BigDecimal num = varcharCallResultAsNumeric(parameterIndex, "Int", Types.INTEGER);
+      return num == null ? 0 : num.intValue();
+    }
+    /* POLAR end */
+
     Object result = checkIndex(parameterIndex, Types.INTEGER, "Int");
     if (result == null) {
       return 0;
@@ -875,6 +896,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       }
       return ((BigDecimal) result).longValue();
     }
+
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getLong */
+    if (testReturn == Types.VARCHAR) {
+      BigDecimal num = varcharCallResultAsNumeric(parameterIndex, "Long", Types.BIGINT);
+      return num == null ? 0 : num.longValue();
+    }
+    /* POLAR end */
 
     Object result = checkIndex(parameterIndex, Types.BIGINT, "Long");
     if (result == null) {
@@ -901,6 +929,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       return ((BigDecimal) result).floatValue();
     }
 
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getFloat */
+    if (testReturn == Types.VARCHAR) {
+      BigDecimal num = varcharCallResultAsNumeric(parameterIndex, "Float", Types.REAL);
+      return num == null ? 0 : num.floatValue();
+    }
+    /* POLAR end */
+
     Object result = checkIndex(parameterIndex, Types.REAL, "Float");
     if (result == null) {
       return 0;
@@ -921,6 +956,13 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
       return ((BigDecimal) result).doubleValue();
     }
 
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getDouble */
+    if (testReturn == Types.VARCHAR) {
+      BigDecimal num = varcharCallResultAsNumeric(parameterIndex, "Double", Types.DOUBLE);
+      return num == null ? 0 : num.doubleValue();
+    }
+    /* POLAR end */
+
     Object result = checkIndex(parameterIndex, Types.DOUBLE, "Double");
     if (result == null) {
       return 0;
@@ -930,6 +972,12 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public @Nullable BigDecimal getBigDecimal(@Positive int parameterIndex, int scale) throws SQLException {
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getBigDecimal */
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+    if (testReturn == Types.VARCHAR) {
+      return varcharCallResultAsNumeric(parameterIndex, "BigDecimal", Types.NUMERIC);
+    }
+    /* POLAR end */
     Object result = checkIndex(parameterIndex, Types.NUMERIC, "BigDecimal");
     return (@Nullable BigDecimal) result;
   }
@@ -1069,6 +1117,45 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     return callResult[parameterIndex - 1];
   }
 
+  /* POLAR: ojdbc compatibility - an OUT parameter registered as Types.VARCHAR may still be
+   * read through numeric getters (getInt/getLong/getShort/getByte/getFloat/getDouble/
+   * getBigDecimal). Oracle ojdbc converts the string value on the fly; mimic that by parsing
+   * the value as BigDecimal. When the value cannot be parsed, throw the original strict
+   * type-mismatch error so existing behavior is preserved for truly incompatible reads.
+   *
+   * @param parameterIndex 1-based parameter index
+   * @param getName        getter name used in the error message (e.g. "Int")
+   * @param sqlType        the java.sql.Types code the getter expects
+   * @return parsed numeric value, or null when the OUT value is SQL NULL
+   */
+  private @Nullable BigDecimal varcharCallResultAsNumeric(@Positive int parameterIndex,
+      String getName, int sqlType) throws SQLException {
+    Object result = getCallResult(parameterIndex);
+    if (result == null) {
+      // SQL NULL: numeric getters return 0/null and wasNull() reports true via lastIndex
+      return null;
+    }
+    if (result instanceof BigDecimal) {
+      return (BigDecimal) result;
+    }
+    if (result instanceof Number) {
+      return new BigDecimal(result.toString());
+    }
+    if (result instanceof String) {
+      try {
+        return new BigDecimal(((String) result).trim());
+      } catch (NumberFormatException nfe) {
+        // fall through to the original type-mismatch error
+      }
+    }
+    throw new PSQLException(
+        GT.tr("Parameter of type {0} was registered, but call to get{1} (sqltype={2}) was made.",
+            "java.sql.Types=" + Types.VARCHAR, getName,
+            "java.sql.Types=" + sqlType),
+        PSQLState.MOST_SPECIFIC_TYPE_DOES_NOT_MATCH);
+  }
+  /* POLAR end */
+
   @Override
   protected BatchResultHandler createBatchHandler(Query[] queries,
       @Nullable ParameterList[] parameterLists) {
@@ -1081,6 +1168,12 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   }
 
   public java.math.@Nullable BigDecimal getBigDecimal(@Positive int parameterIndex) throws SQLException {
+    /* POLAR: ojdbc compat - registered as VARCHAR but read via getBigDecimal */
+    int testReturn = this.testReturn != null ? this.testReturn[parameterIndex - 1] : -1;
+    if (testReturn == Types.VARCHAR) {
+      return varcharCallResultAsNumeric(parameterIndex, "BigDecimal", Types.NUMERIC);
+    }
+    /* POLAR end */
     Object result = checkIndex(parameterIndex, Types.NUMERIC, "BigDecimal");
     return ((BigDecimal) result);
   }
