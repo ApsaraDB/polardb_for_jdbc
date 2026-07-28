@@ -605,6 +605,32 @@ allprojects {
                 return@configure
             }
 
+            // Sonatype Central Portal (https://central.sonatype.com)
+            // Legacy OSSRH (oss.sonatype.org) was sunset in June 2025; artifacts are now
+            // deployed via the Central Portal OSSRH-compatible endpoints.
+            // Credentials: -PcentralPortalUsername=xxx -PcentralPortalPassword=xxx
+            //   or environment variables CENTRAL_PORTAL_USERNAME / CENTRAL_PORTAL_PASSWORD
+            // Publish with: ./gradlew publishAllPublicationsToCentralRepository -Prelease
+            repositories {
+                maven {
+                    name = "central"
+                    val isSnapshot = project.version.toString().endsWith("-SNAPSHOT")
+                    url = uri(
+                        if (isSnapshot) {
+                            "https://central.sonatype.com/repository/maven-snapshots/"
+                        } else {
+                            "https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/"
+                        }
+                    )
+                    credentials {
+                        username = project.findProperty("centralPortalUsername") as? String
+                            ?: System.getenv("CENTRAL_PORTAL_USERNAME")
+                        password = project.findProperty("centralPortalPassword") as? String
+                            ?: System.getenv("CENTRAL_PORTAL_PASSWORD")
+                    }
+                }
+            }
+
             publications {
                 // <editor-fold defaultstate="collapsed" desc="Override published artifacts (e.g. shaded instead of regular)">
                 val extraMavenPublications by configurations.creating {
@@ -642,11 +668,11 @@ allprojects {
                     pom {
                         simplifyXml()
                         name.set(
-                            (project.findProperty("artifact.name") as? String) ?: "pgdjbc ${project.name.capitalize()}"
+                            (project.findProperty("artifact.name") as? String) ?: "PolarDB JDBC ${project.name.capitalize()}"
                         )
-                        description.set(project.description ?: "PostgreSQL JDBC Driver ${project.name.capitalize()}")
+                        description.set(project.description ?: "PolarDB JDBC Driver (PostgreSQL/Oracle compatible) ${project.name.capitalize()}")
                         inceptionYear.set("1997")
-                        url.set("https://jdbc.postgresql.org")
+                        url.set("https://www.alibabacloud.com/product/polardb")
                         licenses {
                             license {
                                 name.set("BSD-2-Clause")
@@ -656,57 +682,45 @@ allprojects {
                             }
                         }
                         organization {
-                            name.set("PostgreSQL Global Development Group")
-                            url.set("https://jdbc.postgresql.org/")
+                            name.set("Alibaba Cloud")
+                            url.set("https://www.alibabacloud.com")
                         }
                         developers {
                             developer {
-                                id.set("davecramer")
-                                name.set("Dave Cramer")
-                            }
-                            developer {
-                                id.set("jurka")
-                                name.set("Kris Jurka")
-                            }
-                            developer {
-                                id.set("oliver")
-                                name.set("Oliver Jowett")
-                            }
-                            developer {
-                                id.set("ringerc")
-                                name.set("Craig Ringer")
-                            }
-                            developer {
-                                id.set("vlsi")
-                                name.set("Vladimir Sitnikov")
-                            }
-                            developer {
-                                id.set("bokken")
-                                name.set("Brett Okken")
+                                id.set("polardb")
+                                name.set("PolarDB Development Team")
+                                organization.set("Alibaba Cloud")
+                                organizationUrl.set("https://www.alibabacloud.com")
                             }
                         }
                         issueManagement {
                             system.set("GitHub issues")
-                            url.set("https://github.com/pgjdbc/pgjdbc/issues")
-                        }
-                        mailingLists {
-                            mailingList {
-                                name.set("PostgreSQL JDBC development list")
-                                subscribe.set("https://lists.postgresql.org/")
-                                unsubscribe.set("https://lists.postgresql.org/unsubscribe/")
-                                post.set("pgsql-jdbc@postgresql.org")
-                                archive.set("https://www.postgresql.org/list/pgsql-jdbc/")
-                            }
+                            url.set("https://github.com/ApsaraDB/polardb_for_jdbc/issues")
                         }
                         scm {
-                            connection.set("scm:git:https://github.com/pgjdbc/pgjdbc.git")
-                            developerConnection.set("scm:git:https://github.com/pgjdbc/pgjdbc.git")
-                            url.set("https://github.com/pgjdbc/pgjdbc")
+                            connection.set("scm:git:https://github.com/ApsaraDB/polardb_for_jdbc.git")
+                            developerConnection.set("scm:git:https://github.com/ApsaraDB/polardb_for_jdbc.git")
+                            url.set("https://github.com/ApsaraDB/polardb_for_jdbc")
                             tag.set("HEAD")
                         }
                     }
                 }
                 // </editor-fold>
+            }
+        }
+
+        // Maven Central requires PGP signatures (.asc) for every published artifact.
+        // Signing is enforced only for release versions (see SigningPlugin config above);
+        // for SNAPSHOT builds the sign tasks are skipped when no key is configured.
+        // Provide the key via standard Gradle properties in ~/.gradle/gradle.properties:
+        //   signing.keyId=XXXXXXXX
+        //   signing.password=***
+        //   signing.secretKeyRingFile=/Users/xxx/.gnupg/secring.gpg
+        // or use the gpg command line tool with -PuseGpgCmd
+        if (project.props.bool("nexus.publish", default = true)) {
+            apply(plugin = "signing")
+            configure<SigningExtension> {
+                sign(the<PublishingExtension>().publications)
             }
         }
     }
