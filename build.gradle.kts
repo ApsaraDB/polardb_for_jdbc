@@ -108,18 +108,49 @@ tasks.register("assembleRelease") {
 
 // Aliases for the internal release platform which invokes the
 // io.github.gradle-nexus.publish-plugin style commands
-// "./gradlew publishToSonatype closeSonatypeStagingRepository" and cannot be
-// reconfigured on the platform side. That plugin itself cannot be applied here
-// (extension name clash with the bundled de.marcphilipp.nexus-publish, see the
-// "Publishing to an internal Nexus platform" note below), so equivalent tasks
-// are registered manually:
-// - publishToSonatype: publishes all publications to the Central Portal
-//   OSSRH-compatible staging endpoint (same as publishAllPublicationsToCentralRepository)
-// - closeSonatypeStagingRepository: notifies the Central Portal that the staged
-//   deployment is complete, so it shows up for validation/publishing on
-//   https://central.sonatype.com/publishing (user_managed: the final "Publish"
-//   click remains manual; change publishing_type to "automatic" to fully automate)
+//   ./gradlew publishToSonatype closeSonatypeStagingRepository
+//   ./gradlew findSonatypeStagingRepository releaseSonatypeStagingRepository
+// and cannot be reconfigured on the platform side. That plugin itself cannot be
+// applied here (extension name clash with the bundled de.marcphilipp.nexus-publish,
+// see the "Publishing to an internal Nexus platform" note below), so equivalent
+// tasks are registered manually on top of the Central Portal OSSRH-compatible API
+// (https://ossrh-staging-api.central.sonatype.com):
+// - publishToSonatype: publishes all publications to the Central staging endpoint
+//   (same as publishAllPublicationsToCentralRepository)
+// - closeSonatypeStagingRepository: no-op; with the Portal compatibility API the
+//   validation ("close") happens after the deployment upload performed by release
+// - findSonatypeStagingRepository: lists the open staging repositories of the
+//   com.aliyun.polardb2 namespace
+// - releaseSonatypeStagingRepository: moves the staged artifacts into a Central
+//   Portal deployment with publishing_type=automatic, i.e. they are validated and
+//   published to Maven Central without further manual confirmation
 // Note: settings.gradle.kts turns these invocations into a release build (-Prelease).
+fun centralStagingApi(method: String, path: String): String {
+    val username = sonatypeCredential("Username")
+        ?: throw GradleException(
+            "Central credentials missing: set the sonatypeUsername project property " +
+                "(e.g. via the ORG_GRADLE_PROJECT_sonatypeUsername environment variable)"
+        )
+    val password = sonatypeCredential("Password")
+        ?: throw GradleException(
+            "Central credentials missing: set the sonatypePassword project property " +
+                "(e.g. via the ORG_GRADLE_PROJECT_sonatypePassword environment variable)"
+        )
+    val token = java.util.Base64.getEncoder()
+        .encodeToString("$username:$password".toByteArray(Charsets.UTF_8))
+    val connection = java.net.URL("https://ossrh-staging-api.central.sonatype.com$path")
+        .openConnection() as java.net.HttpURLConnection
+    connection.requestMethod = method
+    connection.setRequestProperty("Authorization", "Bearer $token")
+    val responseCode = connection.responseCode
+    val body = (if (responseCode in 200..299) connection.inputStream else connection.errorStream)
+        ?.readBytes()?.toString(Charsets.UTF_8).orEmpty()
+    if (responseCode !in 200..299) {
+        throw GradleException("Central staging API $method $path failed: HTTP $responseCode $body")
+    }
+    return body
+}
+
 tasks.register("publishToSonatype") {
     group = "publishing"
     description = "Alias: publishes all publications to the Central repository"
@@ -131,39 +162,42 @@ tasks.register("publishToSonatype") {
 }
 tasks.register("closeSonatypeStagingRepository") {
     group = "publishing"
-    description = "Alias: completes the Central Portal staging deployment for validation"
+    description = "Alias: no-op, Central Portal validates the deployment after release uploads it"
     mustRunAfter("publishToSonatype")
     onlyIf { isReleaseVersion }
     doLast {
-        val username = sonatypeCredential("Username")
-            ?: throw GradleException(
-                "Central credentials missing: set the sonatypeUsername project property " +
-                    "(e.g. via the ORG_GRADLE_PROJECT_sonatypeUsername environment variable)"
-            )
-        val password = sonatypeCredential("Password")
-            ?: throw GradleException(
-                "Central credentials missing: set the sonatypePassword project property " +
-                    "(e.g. via the ORG_GRADLE_PROJECT_sonatypePassword environment variable)"
-            )
-        val token = java.util.Base64.getEncoder()
-            .encodeToString("$username:$password".toByteArray(Charsets.UTF_8))
-        val url = java.net.URL(
-            "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/" +
-                "com.aliyun.polardb2?publishing_type=user_managed"
-        )
-        val connection = url.openConnection() as java.net.HttpURLConnection
-        connection.requestMethod = "POST"
-        connection.setRequestProperty("Authorization", "Bearer $token")
-        val responseCode = connection.responseCode
-        if (responseCode !in 200..299) {
-            val details = connection.errorStream?.readBytes()?.toString(Charsets.UTF_8).orEmpty()
-            throw GradleException(
-                "Failed to complete the Central staging deployment: HTTP $responseCode $details"
-            )
-        }
         println(
-            "Central staging deployment completed. " +
-                "Review and publish it at https://central.sonatype.com/publishing"
+            "Nothing to close: with the Central Portal OSSRH-compatible flow the staged " +
+                "artifacts are validated after releaseSonatypeStagingRepository uploads the deployment."
+        )
+    }
+}
+tasks.register("findSonatypeStagingRepository") {
+    group = "publishing"
+    description = "Alias: lists the open Central staging repositories of com.aliyun.polardb2"
+    mustRunAfter("publishToSonatype", "closeSonatypeStagingRepository")
+    onlyIf { isReleaseVersion }
+    doLast {
+        val body = centralStagingApi(
+            "GET",
+            "/manual/search/repositories?profile_id=com.aliyun.polardb2&state=open"
+        )
+        println("Central staging repositories: $body")
+    }
+}
+tasks.register("releaseSonatypeStagingRepository") {
+    group = "publishing"
+    description = "Alias: publishes the staged Central deployment to Maven Central"
+    mustRunAfter("publishToSonatype", "closeSonatypeStagingRepository", "findSonatypeStagingRepository")
+    onlyIf { isReleaseVersion }
+    doLast {
+        centralStagingApi(
+            "POST",
+            "/manual/upload/defaultRepository/com.aliyun.polardb2?publishing_type=automatic"
+        )
+        println(
+            "Central staging deployment uploaded with publishing_type=automatic. " +
+                "Progress can be tracked at https://central.sonatype.com/publishing"
         )
     }
 }

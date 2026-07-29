@@ -49,7 +49,13 @@ rootProject.name = "pgjdbc"
 // The version suffix is computed early during configuration, thus the property
 // is injected before each project is evaluated (mutating startParameter here is
 // too late: Gradle snapshots -P properties before settings evaluation).
-val releaseTaskAliases = setOf("assembleRelease", "publishToSonatype", "closeSonatypeStagingRepository")
+val releaseTaskAliases = setOf(
+    "assembleRelease",
+    "publishToSonatype",
+    "closeSonatypeStagingRepository",
+    "findSonatypeStagingRepository",
+    "releaseSonatypeStagingRepository"
+)
 if (gradle.startParameter.taskNames.any { name -> releaseTaskAliases.any { name == it || name.endsWith(":$it") } }) {
     gradle.beforeProject {
         if (!hasProperty("release")) {
