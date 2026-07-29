@@ -1,5 +1,6 @@
 # PolarDB JDBC Driver
 
+[![Maven Central](https://img.shields.io/maven-central/v/com.aliyun/polardb.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/com.aliyun/polardb)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 ![Java 8+](https://img.shields.io/badge/Java-8%2B-orange.svg)
 ![JDBC 4.2](https://img.shields.io/badge/JDBC-4.2-blue.svg)
@@ -26,6 +27,25 @@ If you find a bug or regression, please file an
 [Issue](https://github.com/ApsaraDB/polardb_for_jdbc/issues).
 
 ## Get the Driver
+
+### Maven Central
+
+The driver is available on [Maven Central](https://central.sonatype.com/artifact/com.aliyun/polardb).
+Add the following dependency to your `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>com.aliyun</groupId>
+    <artifactId>polardb</artifactId>
+    <version>42.5.7.0.15</version>
+</dependency>
+```
+
+Or with Gradle:
+
+```kotlin
+implementation("com.aliyun:polardb:42.5.7.0.15")
+```
 
 The precompiled driver (jar) can also be downloaded from the
 [Alibaba Cloud documentation](https://help.aliyun.com/zh/polardb/polardb-for-oracle/polardb-compatible-with-oracle-drive-2/)
