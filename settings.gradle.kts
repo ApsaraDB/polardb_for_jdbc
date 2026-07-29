@@ -43,6 +43,19 @@ plugins {
 // Note: it cannot be inferred from the directory name as developer might clone pgjdbc to pgjdbc_tmp (or whatever) folder
 rootProject.name = "pgjdbc"
 
+// The internal release platform invokes "./gradlew assembleRelease" and cannot be
+// reconfigured, so treat that invocation as a release build (same as -Prelease).
+// The version suffix is computed early during configuration, thus the property
+// is injected before each project is evaluated (mutating startParameter here is
+// too late: Gradle snapshots -P properties before settings evaluation).
+if (gradle.startParameter.taskNames.any { it == "assembleRelease" || it.endsWith(":assembleRelease") }) {
+    gradle.beforeProject {
+        if (!hasProperty("release")) {
+            extensions.extraProperties["release"] = "true"
+        }
+    }
+}
+
 include(
     "bom",
     "benchmarks",
