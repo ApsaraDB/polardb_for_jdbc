@@ -120,7 +120,7 @@ tasks.register("assembleRelease") {
 // - closeSonatypeStagingRepository: no-op; with the Portal compatibility API the
 //   validation ("close") happens after the deployment upload performed by release
 // - findSonatypeStagingRepository: lists the open staging repositories of the
-//   com.aliyun.polardb2 namespace
+//   com.aliyun namespace
 // - releaseSonatypeStagingRepository: moves the staged artifacts into a Central
 //   Portal deployment with publishing_type=automatic, i.e. they are validated and
 //   published to Maven Central without further manual confirmation
@@ -291,7 +291,7 @@ fun sonatypeCredential(kind: String): String? =
         ?: stringProp("centralPortal$kind", "CENTRAL_PORTAL_${kind.toUpperCase()}")
 
 allprojects {
-    group = "com.aliyun.polardb2"
+    group = "com.aliyun"
     version = buildVersion
 
     apply(plugin = "com.github.vlsi.gradle-extensions")
@@ -706,7 +706,7 @@ allprojects {
                         attributes["Specification-Title"] = "JDBC"
                     }
                     attributes["Implementation-Vendor"] = "PostgreSQL Global Development Group"
-                    attributes["Implementation-Vendor-Id"] = "com.aliyun.polardb2"
+                    attributes["Implementation-Vendor-Id"] = "com.aliyun"
                 }
             }
 
