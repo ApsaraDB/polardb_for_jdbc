@@ -174,14 +174,14 @@ tasks.register("closeSonatypeStagingRepository") {
 }
 tasks.register("findSonatypeStagingRepository") {
     group = "publishing"
-    description = "Alias: lists the Central staging repositories of com.aliyun.polardb2"
+    description = "Alias: lists all Central staging repositories of the account"
     mustRunAfter("publishToSonatype", "closeSonatypeStagingRepository")
     onlyIf { isReleaseVersion }
     doLast {
-        val body = centralStagingApi(
-            "GET",
-            "/manual/search/repositories?profile_id=com.aliyun.polardb2"
-        )
+        // No profile_id filter and ip=any: the staging repositories are keyed by the
+        // account's verified namespace (com.aliyun, not the full groupId) and by the
+        // IP of the machine that deployed, so any guessed filter may miss them.
+        val body = centralStagingApi("GET", "/manual/search/repositories?ip=any")
         println("Central staging repositories: $body")
     }
 }
@@ -191,32 +191,46 @@ tasks.register("releaseSonatypeStagingRepository") {
     mustRunAfter("publishToSonatype", "closeSonatypeStagingRepository", "findSonatypeStagingRepository")
     onlyIf { isReleaseVersion }
     doLast {
-        // A repository left in "closed" state (e.g. by an earlier interrupted run or
-        // by a previous user_managed upload) blocks any further release with
-        // HTTP 400 "must be dropped before a new release can occur", so stale
-        // closed repositories are dropped first. Their content has already been
-        // transferred to a Central Portal deployment, the staging repository
-        // itself holds no unique data anymore.
-        val search = centralStagingApi(
-            "GET",
-            "/manual/search/repositories?profile_id=com.aliyun.polardb2"
-        )
+        // List every staging repository of the account (ip=any, no profile filter:
+        // the repository keys are derived from the verified namespace com.aliyun and
+        // the deploying machine's IP, so filtered queries may miss them).
+        val search = centralStagingApi("GET", "/manual/search/repositories?ip=any")
         val parsed = groovy.json.JsonSlurper().parseText(search) as? Map<*, *>
-        val repositories = (parsed?.get("repositories") as? List<*>).orEmpty()
-        repositories.filterIsInstance<Map<*, *>>()
-            .filter { it["state"] == "closed" }
-            .forEach { repo ->
-                val key = repo["key"].toString()
-                println("Dropping stale closed Central staging repository: $key")
-                centralStagingApi(
-                    "DELETE",
-                    "/manual/drop/repository/" + java.net.URLEncoder.encode(key, "UTF-8")
-                )
-            }
-        centralStagingApi(
-            "POST",
-            "/manual/upload/defaultRepository/com.aliyun.polardb2?publishing_type=automatic"
-        )
+        val repositories = (parsed?.get("repositories") as? List<*>)
+            .orEmpty()
+            .filterIsInstance<Map<*, *>>()
+
+        // A repository left in "closed" state (e.g. by an earlier interrupted run)
+        // blocks any further release with HTTP 400 "must be dropped before a new
+        // release can occur", so stale closed repositories are dropped first.
+        repositories.filter { it["state"] == "closed" }.forEach { repo ->
+            val key = repo["key"].toString()
+            println("Dropping stale closed Central staging repository: $key")
+            centralStagingApi(
+                "DELETE",
+                "/manual/drop/repository/" + java.net.URLEncoder.encode(key, "UTF-8")
+            )
+        }
+
+        // Publish each open repository explicitly by its key instead of the
+        // defaultRepository/{namespace} endpoint, which requires guessing the
+        // exact namespace the repository was staged under.
+        val openRepositories = repositories.filter { it["state"] == "open" }
+        if (openRepositories.isEmpty()) {
+            throw GradleException(
+                "No open Central staging repository found to release. " +
+                    "Run publishToSonatype first. Search result: $search"
+            )
+        }
+        openRepositories.forEach { repo ->
+            val key = repo["key"].toString()
+            println("Releasing Central staging repository: $key")
+            centralStagingApi(
+                "POST",
+                "/manual/upload/repository/" + java.net.URLEncoder.encode(key, "UTF-8") +
+                    "?publishing_type=automatic"
+            )
+        }
         println(
             "Central staging deployment uploaded with publishing_type=automatic. " +
                 "Progress can be tracked at https://central.sonatype.com/publishing"
