@@ -174,13 +174,13 @@ tasks.register("closeSonatypeStagingRepository") {
 }
 tasks.register("findSonatypeStagingRepository") {
     group = "publishing"
-    description = "Alias: lists the open Central staging repositories of com.aliyun.polardb2"
+    description = "Alias: lists the Central staging repositories of com.aliyun.polardb2"
     mustRunAfter("publishToSonatype", "closeSonatypeStagingRepository")
     onlyIf { isReleaseVersion }
     doLast {
         val body = centralStagingApi(
             "GET",
-            "/manual/search/repositories?profile_id=com.aliyun.polardb2&state=open"
+            "/manual/search/repositories?profile_id=com.aliyun.polardb2"
         )
         println("Central staging repositories: $body")
     }
@@ -191,6 +191,28 @@ tasks.register("releaseSonatypeStagingRepository") {
     mustRunAfter("publishToSonatype", "closeSonatypeStagingRepository", "findSonatypeStagingRepository")
     onlyIf { isReleaseVersion }
     doLast {
+        // A repository left in "closed" state (e.g. by an earlier interrupted run or
+        // by a previous user_managed upload) blocks any further release with
+        // HTTP 400 "must be dropped before a new release can occur", so stale
+        // closed repositories are dropped first. Their content has already been
+        // transferred to a Central Portal deployment, the staging repository
+        // itself holds no unique data anymore.
+        val search = centralStagingApi(
+            "GET",
+            "/manual/search/repositories?profile_id=com.aliyun.polardb2"
+        )
+        val parsed = groovy.json.JsonSlurper().parseText(search) as? Map<*, *>
+        val repositories = (parsed?.get("repositories") as? List<*>).orEmpty()
+        repositories.filterIsInstance<Map<*, *>>()
+            .filter { it["state"] == "closed" }
+            .forEach { repo ->
+                val key = repo["key"].toString()
+                println("Dropping stale closed Central staging repository: $key")
+                centralStagingApi(
+                    "DELETE",
+                    "/manual/drop/repository/" + java.net.URLEncoder.encode(key, "UTF-8")
+                )
+            }
         centralStagingApi(
             "POST",
             "/manual/upload/defaultRepository/com.aliyun.polardb2?publishing_type=automatic"
