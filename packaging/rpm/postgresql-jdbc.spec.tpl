@@ -51,7 +51,7 @@ Summary:	JDBC driver for PostgreSQL
 Name:		postgresql-jdbc
 Version:	GENERATED
 Release:	GENERATED
-License:	BSD
+License:	Apache-2.0
 URL:		http://jdbc.postgresql.org/
 
 Source0:	https://repo1.maven.org/maven2/com/aliyun/polardb2/postgresql/%{version}/postgresql-%{version}-jdbc-src.tar.gz

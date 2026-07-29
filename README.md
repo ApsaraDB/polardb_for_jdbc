@@ -1,6 +1,6 @@
 # PolarDB JDBC Driver
 
-[![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 ![Java 8+](https://img.shields.io/badge/Java-8%2B-orange.svg)
 ![JDBC 4.2](https://img.shields.io/badge/JDBC-4.2-blue.svg)
 
@@ -26,16 +26,6 @@ If you find a bug or regression, please file an
 [Issue](https://github.com/ApsaraDB/polardb_for_jdbc/issues).
 
 ## Get the Driver
-
-Maven coordinates:
-
-```xml
-<dependency>
-  <groupId>com.aliyun.polardb2</groupId>
-  <artifactId>polardb</artifactId>
-  <version>42.5.7.0.14</version>
-</dependency>
-```
 
 The precompiled driver (jar) can also be downloaded from the
 [Alibaba Cloud documentation](https://help.aliyun.com/zh/polardb/polardb-for-oracle/polardb-compatible-with-oracle-drive-2/)
@@ -208,5 +198,7 @@ For information on how to contribute to the project see the [Contributing Guidel
 
 ## License
 
-This project is distributed under the [BSD-2-Clause License](LICENSE),
-copyright PostgreSQL Global Development Group and Alibaba Cloud.
+This project is distributed under the [Apache License, Version 2.0](LICENSE),
+copyright Alibaba Group Holding Limited. It is derived from the PostgreSQL JDBC
+Driver, originally distributed under the BSD-2-Clause License, copyright
+PostgreSQL Global Development Group.
