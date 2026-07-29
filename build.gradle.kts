@@ -135,13 +135,15 @@ tasks.register("closeSonatypeStagingRepository") {
     mustRunAfter("publishToSonatype")
     onlyIf { isReleaseVersion }
     doLast {
-        val username = stringProp("centralPortalUsername", "CENTRAL_PORTAL_USERNAME")
+        val username = sonatypeCredential("Username")
             ?: throw GradleException(
-                "Central Portal credentials missing: set centralPortalUsername/CENTRAL_PORTAL_USERNAME"
+                "Central credentials missing: set the sonatypeUsername project property " +
+                    "(e.g. via the ORG_GRADLE_PROJECT_sonatypeUsername environment variable)"
             )
-        val password = stringProp("centralPortalPassword", "CENTRAL_PORTAL_PASSWORD")
+        val password = sonatypeCredential("Password")
             ?: throw GradleException(
-                "Central Portal credentials missing: set centralPortalPassword/CENTRAL_PORTAL_PASSWORD"
+                "Central credentials missing: set the sonatypePassword project property " +
+                    "(e.g. via the ORG_GRADLE_PROJECT_sonatypePassword environment variable)"
             )
         val token = java.util.Base64.getEncoder()
             .encodeToString("$username:$password".toByteArray(Charsets.UTF_8))
@@ -206,6 +208,17 @@ releaseParams {
 fun stringProp(propName: String, envName: String): String? =
     (project.findProperty(propName) as? String)?.takeIf { it.isNotBlank() }
         ?: System.getenv(envName)?.takeIf { it.isNotBlank() }
+
+// Central credential lookup following the gradle-nexus/publish-plugin convention
+// (https://github.com/gradle-nexus/publish-plugin): for a repository named "sonatype"
+// the credentials default to the sonatypeUsername/sonatypePassword project properties,
+// which can be provided in ~/.gradle/gradle.properties or injected as the
+// ORG_GRADLE_PROJECT_sonatypeUsername / ORG_GRADLE_PROJECT_sonatypePassword
+// environment variables. The legacy centralPortal* properties and CENTRAL_PORTAL_*
+// environment variables are kept as fallback for existing setups.
+fun sonatypeCredential(kind: String): String? =
+    (project.findProperty("sonatype$kind") as? String)?.takeIf { it.isNotBlank() }
+        ?: stringProp("centralPortal$kind", "CENTRAL_PORTAL_${kind.toUpperCase()}")
 
 allprojects {
     group = "com.aliyun.polardb2"
@@ -715,8 +728,11 @@ allprojects {
             // Sonatype Central Portal (https://central.sonatype.com)
             // Legacy OSSRH (oss.sonatype.org) was sunset in June 2025; artifacts are now
             // deployed via the Central Portal OSSRH-compatible endpoints.
-            // Credentials: -PcentralPortalUsername=xxx -PcentralPortalPassword=xxx
-            //   or environment variables CENTRAL_PORTAL_USERNAME / CENTRAL_PORTAL_PASSWORD
+            // Credentials follow the gradle-nexus/publish-plugin convention:
+            //   sonatypeUsername / sonatypePassword project properties
+            //   (~/.gradle/gradle.properties, -P options, or the
+            //   ORG_GRADLE_PROJECT_sonatypeUsername / ORG_GRADLE_PROJECT_sonatypePassword
+            //   environment variables); centralPortal* / CENTRAL_PORTAL_* kept as fallback.
             // Publish with: ./gradlew publishAllPublicationsToCentralRepository -Prelease
             repositories {
                 maven {
@@ -730,10 +746,8 @@ allprojects {
                         }
                     )
                     credentials {
-                        username = project.findProperty("centralPortalUsername") as? String
-                            ?: System.getenv("CENTRAL_PORTAL_USERNAME")
-                        password = project.findProperty("centralPortalPassword") as? String
-                            ?: System.getenv("CENTRAL_PORTAL_PASSWORD")
+                        username = sonatypeCredential("Username")
+                        password = sonatypeCredential("Password")
                     }
                 }
             }
