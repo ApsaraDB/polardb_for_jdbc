@@ -95,6 +95,17 @@ val jacocoReport by tasks.registering(JacocoReport::class) {
     description = "Generates an aggregate report from all subprojects"
 }
 
+// Alias for the internal release platform which invokes the Android-style
+// "./gradlew assembleRelease" and cannot be reconfigured on the platform side.
+// It builds all driver artifacts (jar, all/osgi jars, sources, javadoc).
+// Note: settings.gradle.kts turns this invocation into a release build
+// (equivalent to -Prelease), so the produced jars have no -SNAPSHOT suffix.
+tasks.register("assembleRelease") {
+    group = LifecycleBasePlugin.BUILD_GROUP
+    description = "Alias of :polardb:assemble for the internal release platform"
+    dependsOn(":polardb:assemble")
+}
+
 releaseParams {
     tlp.set("pgjdbc")
     organizationName.set("pgjdbc")
@@ -753,7 +764,10 @@ allprojects {
         //   signing.password=***
         //   signing.secretKeyRingFile=/Users/xxx/.gnupg/secring.gpg
         // or use the gpg command line tool with -PuseGpgCmd
-        if (project.props.bool("nexus.publish", default = true)) {
+        // Note: in release mode (-Prelease) the stage-vote-release plugin already signs
+        // the publications itself, so the explicit sign() below would register duplicate
+        // signXxxPublication tasks and fail the build; it is applied for SNAPSHOT only.
+        if (project.props.bool("nexus.publish", default = true) && !isReleaseVersion) {
             apply(plugin = "signing")
             configure<SigningExtension> {
                 sign(the<PublishingExtension>().publications)
