@@ -1,64 +1,102 @@
-<img height="90" alt="Slonik Duke" align="right" src="docs/_site/media/img/slonik_duke.png" />
+# PolarDB JDBC Driver
 
-# PostgreSQL JDBC Driver
-
-PostgreSQL JDBC Driver (PgJDBC for short) allows Java programs to connect to a PostgreSQL database using standard, database independent Java code. Is an open source JDBC driver written in Pure Java (Type 4), and communicates in the PostgreSQL native network protocol.
-
-### Status
-[![GitHub CI](https://github.com/pgjdbc/pgjdbc/actions/workflows/main.yml/badge.svg?branch=master)](https://github.com/pgjdbc/pgjdbc/actions/workflows/main.yml)
-[![Build status](https://ci.appveyor.com/api/projects/status/d8ucmegnmourohwu/branch/master?svg=true)](https://ci.appveyor.com/project/davecramer/pgjdbc/branch/master)
-[![codecov.io](http://codecov.io/github/pgjdbc/pgjdbc/coverage.svg?branch=master)](http://codecov.io/github/pgjdbc/pgjdbc?branch=master)
 [![License](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause)
-[![Join the chat at https://gitter.im/pgjdbc/pgjdbc](https://badges.gitter.im/pgjdbc/pgjdbc.svg)](https://gitter.im/pgjdbc/pgjdbc?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+![Java 8+](https://img.shields.io/badge/Java-8%2B-orange.svg)
+![JDBC 4.2](https://img.shields.io/badge/JDBC-4.2-blue.svg)
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.aliyun.polardb2/postgresql/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.aliyun.polardb2/postgresql)
-[![Javadocs](http://javadoc.io/badge/com.aliyun.polardb2/postgresql.svg)](http://javadoc.io/doc/com.aliyun.polardb2/postgresql)
+PolarDB JDBC Driver allows Java programs to connect to a PolarDB for PostgreSQL database
+(including the Oracle-compatible editions) using standard, database independent Java code.
+It is an open source JDBC driver written in Pure Java (Type 4), derived from the
+[PostgreSQL JDBC Driver (PgJDBC)](https://github.com/pgjdbc/pgjdbc), and communicates in the
+PostgreSQL native network protocol.
 
-## Supported PostgreSQL and Java versions
-The current version of the driver should be compatible with **PostgreSQL 8.4 and higher** using the version 3.0 of the protocol and **Java 8** (JDBC 4.2) or above. Unless you have unusual requirements (running old applications or JVMs), this is the driver you should be using.
+On top of PgJDBC, this driver adds a large set of Oracle compatibility features for PolarDB,
+such as Oracle-style `DATE`/`NUMBER` handling, `BLOB`/`CLOB` mapping, associative arrays,
+`REF CURSOR`, named parameters and more. See [PolardbRealease.md](PolardbRealease.md) for the
+full user manual (in Chinese) of the PolarDB-specific features and parameters.
 
-PgJDBC regression tests are run against all PostgreSQL versions since 9.1, including "build PostgreSQL from git master" version. There are other derived forks of PostgreSQL but they have not been certified to run with PgJDBC. If you find a bug or regression on supported versions, please file an [Issue](https://github.com/pgjdbc/pgjdbc/issues).
+## Supported PolarDB / PostgreSQL and Java versions
+
+The driver requires **Java 8** (JDBC 4.2) or above, and is compatible with:
+
+* **PolarDB for PostgreSQL** (Oracle-compatible 1.0 and 2.0 editions)
+* **PostgreSQL 8.4 and higher** using version 3.0 of the wire protocol
+
+If you find a bug or regression, please file an
+[Issue](https://github.com/ApsaraDB/polardb_for_jdbc/issues).
 
 ## Get the Driver
-Most people do not need to compile PgJDBC. You can download the precompiled driver (jar) from the [PostgreSQL JDBC site](https://jdbc.postgresql.org/download.html) or using your chosen dependency management tool:
 
-### Maven Central
-You can search on The Central Repository with GroupId and ArtifactId [com.aliyun.polardb2:postgresql][mvn-search].
-
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.aliyun.polardb2/postgresql/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.aliyun.polardb2/postgresql)
+Maven coordinates:
 
 ```xml
-<!-- Add the following dependency to your pom.xml, -->
-<!-- replacing LATEST with specific version as required -->
-
 <dependency>
   <groupId>com.aliyun.polardb2</groupId>
-  <artifactId>postgresql</artifactId>
-  <version>LATEST</version>
+  <artifactId>polardb</artifactId>
+  <version>42.5.7.0.14</version>
 </dependency>
 ```
 
-[mvn-search]: https://search.maven.org/artifact/com.aliyun.polardb2/postgresql "Search on Maven Central"
+The precompiled driver (jar) can also be downloaded from the
+[Alibaba Cloud documentation](https://help.aliyun.com/zh/polardb/polardb-for-oracle/polardb-compatible-with-oracle-drive-2/)
+for PolarDB.
 
-#### Development snapshots
-Snapshot builds (builds from `master` branch) are also deployed to OSS Sonatype Snapshot Repository, so you can test current development version (test some bugfix) by enabling the repository and using the latest [SNAPSHOT](https://oss.sonatype.org/content/repositories/snapshots/com/aliyun/polardb2/postgresql/maven-metadata.xml) version.
+### Building from source
 
-There are also available (snapshot) binary RPMs in [Fedora's Copr repository](https://copr.fedorainfracloud.org/coprs/g/pgjdbc/pgjdbc-travis/).
+The project is built with Gradle. JDK 8 or newer is required.
 
-----------------------------------------------------
+```bash
+# Build the driver jar (skipping tests)
+./gradlew build -x test
+
+# The jar is generated under
+# pgjdbc/build/libs/
+```
+
+To run the test suite a running PolarDB/PostgreSQL instance is required, see
+[TESTING.md](TESTING.md) and [PolarDB_conf.md](PolarDB_conf.md) for the test
+environment setup.
+
+## Quick Start
+
+```java
+Class.forName("com.aliyun.polardb2.Driver");
+
+String url = "jdbc:polardb://localhost:5432/test";
+Properties props = new Properties();
+props.setProperty("user", "test");
+props.setProperty("password", "test");
+
+try (Connection conn = DriverManager.getConnection(url, props);
+     Statement st = conn.createStatement();
+     ResultSet rs = st.executeQuery("SELECT 1")) {
+    while (rs.next()) {
+        System.out.println(rs.getInt(1));
+    }
+}
+```
+
 ## Documentation
-For more information you can read [the PgJDBC driver documentation](https://jdbc.postgresql.org/documentation/) or for general JDBC documentation please refer to [The Java™ Tutorials](http://docs.oracle.com/javase/tutorial/jdbc/).
+
+* [PolardbRealease.md](PolardbRealease.md) - PolarDB JDBC user manual: PolarDB-specific
+  connection parameters, Oracle-compatible data type behaviour and feature notes (Chinese)
+* [PolarDB_conf.md](PolarDB_conf.md) - test environment configuration reference
+* [PgJDBC driver documentation](https://jdbc.postgresql.org/documentation/) - documentation of
+  the upstream driver this project is based on
+* [The Java™ Tutorials (JDBC)](https://docs.oracle.com/javase/tutorial/jdbc/) - general JDBC
+  documentation
 
 ### Driver and DataSource class
 
-| Implements                          | Class                                          |
-| ----------------------------------- | ---------------------------------------------- |
-| java.sql.Driver                     | **com.aliyun.polardb2.Driver**                      |
-| javax.sql.DataSource                | com.aliyun.polardb2.ds.PGSimpleDataSource           |
-| javax.sql.ConnectionPoolDataSource  | com.aliyun.polardb2.ds.PGConnectionPoolDataSource   |
-| javax.sql.XADataSource              | com.aliyun.polardb2.xa.PGXADataSource               |
+| Implements                          | Class                                              |
+| ----------------------------------- | -------------------------------------------------- |
+| java.sql.Driver                     | **com.aliyun.polardb2.Driver**                     |
+| javax.sql.DataSource                | com.aliyun.polardb2.ds.PGSimpleDataSource          |
+| javax.sql.ConnectionPoolDataSource  | com.aliyun.polardb2.ds.PGConnectionPoolDataSource  |
+| javax.sql.XADataSource              | com.aliyun.polardb2.xa.PGXADataSource              |
 
 ### Building the Connection URL
+
 The driver recognises JDBC URLs of the form:
 ```
 jdbc:polardb:database
@@ -69,7 +107,7 @@ jdbc:polardb://host:port/database
 jdbc:polardb://host:port/
 jdbc:polardb://?service=myservice
 ```
-The general format for a JDBC URL for connecting to a PostgreSQL server is as follows, with items in square brackets ([ ]) being optional:
+The general format for a JDBC URL for connecting to a PolarDB server is as follows, with items in square brackets ([ ]) being optional:
 ```
 jdbc:polardb:[//host[:port]/][database][?property1=value1[&property2=value2]...]
 ```
@@ -81,12 +119,16 @@ where:
  * **propertyX** (Optional) is one or more option connection properties. For more information see *Connection properties*.
 
 ### Logging
-PgJDBC uses java.util.logging for logging.
+
+The driver uses java.util.logging for logging.
 To configure log levels and control log output destination (e.g. file or console), configure your java.util.logging properties accordingly for the com.aliyun.polardb2 logger.
 Note that the most detailed log levels, "`FINEST`", may include sensitive information such as connection details, query SQL, or command parameters.
 
 #### Connection Properties
-In addition to the standard connection parameters the driver supports a number of additional properties which can be used to specify additional driver behaviour specific to PostgreSQL™. These properties may be specified in either the connection URL or an additional Properties object parameter to DriverManager.getConnection.
+
+In addition to the standard connection parameters the driver supports a number of additional properties which can be used to specify additional driver behaviour specific to PolarDB. These properties may be specified in either the connection URL or an additional Properties object parameter to DriverManager.getConnection.
+
+Note: the PolarDB-specific properties (e.g. `blobAsBytea`, `clobAsText`, `mapDateToTimestamp`, `oracleCase`, `namedParam`, `numberStripTrailingZeros`, ...) are documented in detail in [PolardbRealease.md](PolardbRealease.md).
 
 | Property                      | Type |         Default         | Description                                                                                                                                                                                                                                                                                                                                     |
 |-------------------------------| -- |:-----------------------:|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------    |
@@ -101,8 +143,8 @@ In addition to the standard connection parameters the driver supports a number o
 | sslcert                       | String |          null           | The location of the client's SSL certificate                                                                                                                                                                                                                                                                                                  |
 | sslkey                        | String |          null           | The location of the client's PKCS#8 SSL key                                                                                                                                                                                                                                                                                                   |
 | sslrootcert                   | String |          null           | The location of the root certificate for authenticating the server.                                                                                                                                                                                                                                                                           |
-| sslhostnameverifier           | String |          null           | The name of a class (for use in [Class.forName(String)](https://docs.oracle.com/javase/6/docs/api/java/lang/Class.html#forName%28java.lang.String%29)) that implements javax.net.ssl.HostnameVerifier and can verify the server hostname.                                                                                                     |
-| sslpasswordcallback           | String |          null           | The name of a class (for use in [Class.forName(String)](https://docs.oracle.com/javase/6/docs/api/java/lang/Class.html#forName%28java.lang.String%29)) that implements javax.security.auth.callback.CallbackHandler and can handle PasswordCallback for the ssl password.                                                                     |
+| sslhostnameverifier           | String |          null           | The name of a class (for use in [Class.forName(String)](https://docs.oracle.com/javase/8/docs/api/java/lang/Class.html#forName-java.lang.String-)) that implements javax.net.ssl.HostnameVerifier and can verify the server hostname.                                                                                                     |
+| sslpasswordcallback           | String |          null           | The name of a class (for use in [Class.forName(String)](https://docs.oracle.com/javase/8/docs/api/java/lang/Class.html#forName-java.lang.String-)) that implements javax.security.auth.callback.CallbackHandler and can handle PasswordCallback for the ssl password.                                                                     |
 | sslpassword                   | String |          null           | The password for the client's ssl key (ignored if sslpasswordcallback is set)                                                                                                                                                                                                                                                                 |
 | sendBufferSize                | Integer |           -1            | Socket write buffer size                                                                                                                                                                                                                                                                                                                      |
 | receiveBufferSize             | Integer |           -1            | Socket read buffer size                                                                                                                                                                                                                                                                                                                       |
@@ -155,14 +197,16 @@ In addition to the standard connection parameters the driver supports a number o
 | channelBinding                 | String |   prefer    | This option controls the client's use of channel binding. `require` means that the connection must employ channel binding, `prefer` means that the client will choose channel binding if available, and `disable` prevents the use of channel binding. |
 
 #### System Properties
+
 | Property                      | Type |         Default         | Description                                                                                                                                                                                                                                                                                                                                     |
 |-------------------------------| -- |:-----------------------:|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------    |
 | pgjdbc.config.cleanup.thread.ttl | long | 30000 |  The driver has an internal cleanup thread which monitors and cleans up unclosed connections. This property sets the duration (in milliseconds) the cleanup thread will keep running if there is nothing to clean up. |
 
 ## Contributing
+
 For information on how to contribute to the project see the [Contributing Guidelines](CONTRIBUTING.md)
 
-----------------------------------------------------
-### Sponsors
+## License
 
-* [PostgreSQL International](http://www.postgresintl.com)
+This project is distributed under the [BSD-2-Clause License](LICENSE),
+copyright PostgreSQL Global Development Group and Alibaba Cloud.

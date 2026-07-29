@@ -116,6 +116,26 @@ releaseParams {
     }
 }
 
+// Publishing to an internal Nexus platform.
+// Note: io.github.gradle-nexus.publish-plugin cannot be applied directly because
+// com.github.vlsi.stage-vote-release bundles its predecessor (de.marcphilipp.nexus-publish,
+// donated to the gradle-nexus org and renamed) which registers the same 'nexusPublishing'
+// extension on the root project. The DSL and tasks are identical, so the internal
+// repository is registered on that bundled extension instead (see allprojects below).
+// Tasks (per publishing project, e.g. :polardb):
+//   ./gradlew publishToInternal            - publish all publications to the internal Nexus
+//   ./gradlew publishToInternal -Prelease  - publish a release (staged when staging is enabled)
+// Configuration (Gradle properties or environment variables):
+//   internalNexusUrl / INTERNAL_NEXUS_URL                   e.g. https://nexus.example.com/service/local/
+//   internalNexusSnapshotUrl / INTERNAL_NEXUS_SNAPSHOT_URL  e.g. https://nexus.example.com/content/repositories/snapshots/
+//   internalNexusUsername / INTERNAL_NEXUS_USERNAME
+//   internalNexusPassword / INTERNAL_NEXUS_PASSWORD
+// If the internal Nexus does not support the staging workflow (e.g. plain Nexus 3),
+// pass -PinternalNexusUseStaging=false to publish directly to internalNexusUrl.
+fun stringProp(propName: String, envName: String): String? =
+    (project.findProperty(propName) as? String)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(envName)?.takeIf { it.isNotBlank() }
+
 allprojects {
     group = "com.aliyun.polardb2"
     version = buildVersion
@@ -125,6 +145,22 @@ allprojects {
     plugins.withId("de.marcphilipp.nexus-publish") {
         configure<de.marcphilipp.gradle.nexus.NexusPublishExtension> {
             clientTimeout.set(java.time.Duration.ofMinutes(15))
+            // Internal platform repository, see "Publishing to an internal Nexus platform" above.
+            // The repository (and its publishToInternal task) only exists when internalNexusUrl
+            // is configured, so regular builds are not affected.
+            stringProp("internalNexusUrl", "INTERNAL_NEXUS_URL")?.let { internalUrl ->
+                repositories.create("internal") {
+                    nexusUrl.set(uri(internalUrl))
+                    snapshotRepositoryUrl.set(
+                        uri(stringProp("internalNexusSnapshotUrl", "INTERNAL_NEXUS_SNAPSHOT_URL") ?: internalUrl)
+                    )
+                    username.set(stringProp("internalNexusUsername", "INTERNAL_NEXUS_USERNAME"))
+                    password.set(stringProp("internalNexusPassword", "INTERNAL_NEXUS_PASSWORD"))
+                }
+                if (!props.bool("internalNexusUseStaging", default = true)) {
+                    useStaging.set(false)
+                }
+            }
         }
     }
 
