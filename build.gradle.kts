@@ -106,6 +106,66 @@ tasks.register("assembleRelease") {
     dependsOn(":polardb:assemble")
 }
 
+// Aliases for the internal release platform which invokes the
+// io.github.gradle-nexus.publish-plugin style commands
+// "./gradlew publishToSonatype closeSonatypeStagingRepository" and cannot be
+// reconfigured on the platform side. That plugin itself cannot be applied here
+// (extension name clash with the bundled de.marcphilipp.nexus-publish, see the
+// "Publishing to an internal Nexus platform" note below), so equivalent tasks
+// are registered manually:
+// - publishToSonatype: publishes all publications to the Central Portal
+//   OSSRH-compatible staging endpoint (same as publishAllPublicationsToCentralRepository)
+// - closeSonatypeStagingRepository: notifies the Central Portal that the staged
+//   deployment is complete, so it shows up for validation/publishing on
+//   https://central.sonatype.com/publishing (user_managed: the final "Publish"
+//   click remains manual; change publishing_type to "automatic" to fully automate)
+// Note: settings.gradle.kts turns these invocations into a release build (-Prelease).
+tasks.register("publishToSonatype") {
+    group = "publishing"
+    description = "Alias: publishes all publications to the Central repository"
+    dependsOn(
+        allprojects.map { p ->
+            p.tasks.matching { it.name == "publishAllPublicationsToCentralRepository" }
+        }
+    )
+}
+tasks.register("closeSonatypeStagingRepository") {
+    group = "publishing"
+    description = "Alias: completes the Central Portal staging deployment for validation"
+    mustRunAfter("publishToSonatype")
+    onlyIf { isReleaseVersion }
+    doLast {
+        val username = stringProp("centralPortalUsername", "CENTRAL_PORTAL_USERNAME")
+            ?: throw GradleException(
+                "Central Portal credentials missing: set centralPortalUsername/CENTRAL_PORTAL_USERNAME"
+            )
+        val password = stringProp("centralPortalPassword", "CENTRAL_PORTAL_PASSWORD")
+            ?: throw GradleException(
+                "Central Portal credentials missing: set centralPortalPassword/CENTRAL_PORTAL_PASSWORD"
+            )
+        val token = java.util.Base64.getEncoder()
+            .encodeToString("$username:$password".toByteArray(Charsets.UTF_8))
+        val url = java.net.URL(
+            "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/" +
+                "com.aliyun.polardb2?publishing_type=user_managed"
+        )
+        val connection = url.openConnection() as java.net.HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Authorization", "Bearer $token")
+        val responseCode = connection.responseCode
+        if (responseCode !in 200..299) {
+            val details = connection.errorStream?.readBytes()?.toString(Charsets.UTF_8).orEmpty()
+            throw GradleException(
+                "Failed to complete the Central staging deployment: HTTP $responseCode $details"
+            )
+        }
+        println(
+            "Central staging deployment completed. " +
+                "Review and publish it at https://central.sonatype.com/publishing"
+        )
+    }
+}
+
 releaseParams {
     tlp.set("pgjdbc")
     organizationName.set("pgjdbc")
