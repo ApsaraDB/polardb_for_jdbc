@@ -17,6 +17,26 @@ JDBC（Java Database Connectivity）为Java应用程序提供了访问数据�
 
 ### 下载驱动
 
+#### Maven 中心仓库（推荐）
+
+驱动已发布至 [Maven 中心仓库](https://central.sonatype.com/artifact/com.aliyun/polardb)，在 `pom.xml` 中添加如下依赖即可（要求 JDK 1.8 及以上）：
+
+```xml
+<dependency>
+    <groupId>com.aliyun</groupId>
+    <artifactId>polardb</artifactId>
+    <version>42.5.7.0.15</version>
+</dependency>
+```
+
+Gradle 方式：
+
+```kotlin
+implementation("com.aliyun:polardb:42.5.7.0.15")
+```
+
+#### 独立 jar 包下载
+
 | JDK版本 | 独立版本 |
 | --- | --- |
 | 1.6 | [请至钉钉文档查看附件《polardb-42.2.13.0.11.jre6.jar》。](https://alidocs.dingtalk.com/i/nodes/gwva2dxOW4vRkd9DUNL65LqnJbkz3BRL?corpId=&iframeQuery=anchorId%3DX02mcwzwed8ba00dwg0b2m) |
@@ -452,6 +472,61 @@ jdbc:poalardb://1.2.XX.XX:5432,2.3.XX.XX:5432/postgres?oracleCase=true
 ```
 
 ### 版本更新说明
+
+#### 版本42.5.7.0.15 (2026-07-29)
+
+**发布方式变更**
+
+*   正式发布至 Maven 中心仓库：坐标为 `com.aliyun:polardb`（groupId 统一变更为 `com.aliyun`，与组织已验证的 namespace 一致；驱动类名、包名不受影响，仍为 `com.aliyun.polardb2.Driver`）。
+    
+*   开源许可协议变更为 Apache License 2.0：全项目 License 引用（POM、jar manifest、META-INF/LICENSE、文档）统一更新，新增 NOTICE 文件保留上游 PostgreSQL JDBC Driver 的 BSD-2-Clause 原始版权声明，随 jar 一并分发。
+    
+
+**新增功能**
+
+*   autocommit 下服务端游标批量抓取：新增连接参数 `autocommitFetch`（默认启用），autocommit 模式下配合 `defaultRowFetchSize` 也能使用服务端游标分批抓取结果集，避免大结果集一次性载入内存。
+    
+*   Oracle 兼容登录名预处理：登录用户名为纯大写时自动转为小写后发送，对齐 Oracle 大小写不敏感的登录习惯（混合大小写用户名保持原样）。
+    
+*   SYNONYM 同义词类型解析：`registerOutParameter(idx, type, typeName)`、`createArrayOf` 等接口传入的类型名支持通过 Oracle 同义词（all_synonyms）解析到实际的自定义 TABLE OF / RECORD 类型。
+    
+*   `CallableStatement.getClob(int)` 实现：OUT 参数支持以 Clob 形式读取文本类型返回值。
+    
+*   复合类型字段的 Java 类型还原：Struct/PGobject 字段值按数据库列类型还原为对应的 Java 对象（数值、日期等），不再统一以字符串返回。
+    
+*   VARCHAR OUT 参数数字 getter 读取：注册为 VARCHAR 的 OUT 参数若内容为数字，可直接用 `getInt()` / `getBigDecimal()` 等数值 getter 读取，兼容 ojdbc 行为。
+    
+*   带返回值占位符的函数调用转 EXEC 语法：`{? = call f(...)}` 形式支持转换为 EXEC 调用语法执行。
+    
+*   DECLARE 匿名块 OUT 参数支持：`DECLARE ... BEGIN ... END` 形式的匿名块支持绑定 OUT 模式参数。
+    
+
+**安全修复**
+
+*   SCRAM 认证增加 PBKDF2 迭代次数上限校验：防止恶意/被劫持服务端通过返回超大迭代次数诱导客户端进行海量哈希计算造成拒绝服务。
+    
+
+**缺陷修复**
+
+*   修复匿名块全 IN 参数时向应用暴露内部结果集的问题：全 IN 参数的匿名块执行后不再返回多余结果集，对齐 Oracle 行为。
+    
+*   修复 `parseEnd` 对多词标签的解析：`END` 后跟多个单词的标签（如 `END my label`）不再解析失败。
+    
+*   修复空复合类型字面量处理异常：INOUT 参数传入空复合类型时 `trimMoney` 处理抛异常的问题。
+    
+*   NUMBER(p,s) 精度溢出报错对齐 Oracle：数值超出声明精度时的报错行为与 Oracle 一致。
+    
+
+**工程优化**
+
+*   构建发布链路对齐 gradle-nexus/publish-plugin 标准：提供 `publishToSonatype` / `closeSonatypeStagingRepository` / `findSonatypeStagingRepository` / `releaseSonatypeStagingRepository` 标准任务链，支持 Central Portal OSSRH 兼容 API 自动化发布（含 closed staging 仓库自动清理）；凭据遵循 `sonatypeUsername` / `sonatypePassword` 项目属性约定。
+    
+*   新增 `assembleRelease` 打包指令：适配内部发布平台，自动按正式版（去 -SNAPSHOT）构建全部产物；修复 `-Prelease` 模式下签名任务重复注册导致构建失败的问题。
+    
+*   移除上游遗留的失效 GitHub Actions CI 工作流，README 按 PolarDB 驱动定位全面重写。
+    
+*   补充测试：NLS 日期格式转换、数值族 OUT 参数互转、PreparedStatement 用例优化等。
+    
 
 #### 版本42.5.7.0.14 (2026-05-28)
 
