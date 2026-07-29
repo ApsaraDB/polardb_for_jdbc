@@ -542,7 +542,7 @@ allprojects {
         tasks {
             configureEach<Jar> {
                 manifest {
-                    attributes["Bundle-License"] = "BSD-2-Clause"
+                    attributes["Bundle-License"] = "Apache-2.0"
                     attributes["Implementation-Title"] = "PostgreSQL JDBC Driver"
                     attributes["Implementation-Version"] = project.version
                     val jdbcSpec = props.string("jdbc.specification.version")
@@ -711,9 +711,9 @@ allprojects {
                         url.set("https://www.alibabacloud.com/product/polardb")
                         licenses {
                             license {
-                                name.set("BSD-2-Clause")
-                                url.set("https://jdbc.postgresql.org/about/license.html")
-                                comments.set("BSD-2-Clause, copyright PostgreSQL Global Development Group")
+                                name.set("Apache-2.0")
+                                url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                                comments.set("Apache License, Version 2.0, copyright Alibaba Group Holding Limited")
                                 distribution.set("repo")
                             }
                         }
