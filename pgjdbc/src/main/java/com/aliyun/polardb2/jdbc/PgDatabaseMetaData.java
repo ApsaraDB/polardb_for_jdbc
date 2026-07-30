@@ -1038,10 +1038,11 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
       @Nullable String procedureNamePattern)
       throws SQLException {
     String sql;
-    sql = "SELECT NULL AS PROCEDURE_CAT, n.nspname AS PROCEDURE_SCHEM, p.proname AS PROCEDURE_NAME, "
+    sql = "SELECT NULL AS PROCEDURE_CAT, " + oracleCaseValue("n.nspname") + " AS PROCEDURE_SCHEM, "
+          + oracleCaseValue("p.proname") + " AS PROCEDURE_NAME, "
           + "NULL, NULL, NULL, d.description AS REMARKS, "
           + DatabaseMetaData.procedureReturnsResult + " AS PROCEDURE_TYPE, "
-          + " p.proname || '_' || p.oid AS SPECIFIC_NAME "
+          + oracleCaseValue("p.proname || '_' || p.oid") + " AS SPECIFIC_NAME "
           + " FROM pg_catalog.pg_namespace n, pg_catalog.pg_proc p "
           + " LEFT JOIN pg_catalog.pg_description d ON (p.oid=d.objoid) "
           + " LEFT JOIN pg_catalog.pg_class c ON (d.classoid=c.oid AND c.relname='pg_proc') "
@@ -1052,10 +1053,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
       sql += " AND p.prokind='p'";
     }
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
-      sql += " AND n.nspname LIKE " + escapeQuotes(schemaPattern);
+      sql += " AND n.nspname LIKE " + escapeQuotes(castNonNull(resolveOraclePattern(null, schemaPattern, true)));
     }
     if (procedureNamePattern != null && !procedureNamePattern.isEmpty()) {
-      sql += " AND p.proname LIKE " + escapeQuotes(procedureNamePattern);
+      sql += " AND p.proname LIKE " + escapeQuotes(castNonNull(lowerPatternIfOracleCase(procedureNamePattern)));
     }
     if (connection.getHideUnprivilegedObjects()) {
       sql += " AND has_function_privilege(p.oid,'EXECUTE')";
@@ -1100,10 +1101,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
           + " FROM pg_catalog.pg_proc p, pg_catalog.pg_namespace n, pg_catalog.pg_type t "
           + " WHERE p.pronamespace=n.oid AND p.prorettype=t.oid ";
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
-      sql += " AND n.nspname LIKE " + escapeQuotes(schemaPattern);
+      sql += " AND n.nspname LIKE " + escapeQuotes(castNonNull(resolveOraclePattern(null, schemaPattern, true)));
     }
     if (procedureNamePattern != null && !procedureNamePattern.isEmpty()) {
-      sql += " AND p.proname LIKE " + escapeQuotes(procedureNamePattern);
+      sql += " AND p.proname LIKE " + escapeQuotes(castNonNull(lowerPatternIfOracleCase(procedureNamePattern)));
     }
     sql += " ORDER BY n.nspname, p.proname, p.oid::text ";
 
@@ -1112,10 +1113,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     Statement stmt = connection.createStatement();
     ResultSet rs = stmt.executeQuery(sql);
     while (rs.next()) {
-      byte[] schema = rs.getBytes("nspname");
-      byte[] procedureName = rs.getBytes("proname");
+      byte[] schema = foldedBytes(rs, "nspname");
+      byte[] procedureName = foldedBytes(rs, "proname");
       byte[] specificName =
-                connection.encodeString(rs.getString("proname") + "_" + rs.getString("oid"));
+                connection.encodeString(castNonNull(foldOracleCase(rs.getString("proname") + "_" + rs.getString("oid"))));
       int returnType = (int) rs.getLong("prorettype");
       String returnTypeType = rs.getString("typtype");
       int returnTypeRelid = (int) rs.getLong("typrelid");
@@ -1183,7 +1184,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         tuple[2] = procedureName;
 
         if (argNames != null) {
-          tuple[3] = connection.encodeString(argNames[i]);
+          tuple[3] = connection.encodeString(castNonNull(foldOracleCase(argNames[i])));
         } else {
           tuple[3] = connection.encodeString("$" + (i + 1));
         }
@@ -1239,7 +1240,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
           tuple[0] = null;
           tuple[1] = schema;
           tuple[2] = procedureName;
-          tuple[3] = columnrs.getBytes("attname");
+          tuple[3] = foldedBytes(columnrs, "attname");
           tuple[4] = connection
               .encodeString(Integer.toString(java.sql.DatabaseMetaData.procedureColumnResult));
           tuple[5] = connection
@@ -1274,7 +1275,8 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     String select;
     String orderby;
     String useSchemas = "SCHEMAS";
-    select = "SELECT NULL AS TABLE_CAT, n.nspname AS TABLE_SCHEM, c.relname AS TABLE_NAME, "
+    select = "SELECT NULL AS TABLE_CAT, " + oracleCaseValue("n.nspname") + " AS TABLE_SCHEM, "
+             + oracleCaseValue("c.relname") + " AS TABLE_NAME, "
              + " CASE n.nspname ~ '^pg_' OR n.nspname = 'information_schema' "
              + " WHEN true THEN CASE "
              + " WHEN n.nspname = 'pg_catalog' OR n.nspname = 'information_schema' THEN CASE c.relkind "
@@ -1318,8 +1320,15 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
              + " LEFT JOIN pg_catalog.pg_description d ON (c.oid = d.objoid AND d.objsubid = 0  and d.classoid = 'pg_class'::regclass) "
              + " WHERE c.relnamespace = n.oid ";
 
+    // POLAR: resolve Oracle upper-case schema/table names to the stored case when oracleCase is
+    // on (same rules as getPrimaryKeys); otherwise keep the legacy unconditional lower-casing.
+    boolean tblOracleCase = metadataOracleCase();
+    String tblSchemaMatch = schemaPattern;
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
-      select += " AND n.nspname LIKE " + escapeQuotes(schemaPattern.toLowerCase(Locale.US));
+      tblSchemaMatch = tblOracleCase
+          ? resolveOraclePattern(null, schemaPattern, true)
+          : schemaPattern.toLowerCase(Locale.US);
+      select += " AND n.nspname LIKE " + escapeQuotes(castNonNull(tblSchemaMatch));
     }
     if (connection.getHideUnprivilegedObjects()) {
       select += " AND has_table_privilege(c.oid, "
@@ -1328,7 +1337,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     orderby = " ORDER BY TABLE_TYPE,TABLE_SCHEM,TABLE_NAME ";
 
     if (tableNamePattern != null && !tableNamePattern.isEmpty()) {
-      select += " AND c.relname LIKE " + escapeQuotes(tableNamePattern.toLowerCase(Locale.US));
+      String tblNameMatch = tblOracleCase
+          ? resolveOraclePattern(tblSchemaMatch, tableNamePattern, false)
+          : tableNamePattern.toLowerCase(Locale.US);
+      select += " AND c.relname LIKE " + escapeQuotes(castNonNull(tblNameMatch));
     }
     if (types != null) {
       select += " AND (false ";
@@ -1443,12 +1455,13 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
       throws SQLException {
     String sql;
 
-    sql = "SELECT nspname AS TABLE_SCHEM, NULL AS TABLE_CATALOG FROM pg_catalog.pg_namespace "
+    sql = "SELECT " + oracleCaseValue("nspname") + " AS TABLE_SCHEM, NULL AS TABLE_CATALOG FROM pg_catalog.pg_namespace "
         + " WHERE nspname <> 'pg_toast' AND nsppkgns = 0 AND (nspname !~ '^pg_temp_' "
         + " OR nspname = (pg_catalog.current_schemas(true))[1]) AND (nspname !~ '^pg_toast_temp_' "
         + " OR nspname = replace((pg_catalog.current_schemas(true))[1], 'pg_temp_', 'pg_toast_temp_')) ";
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
-      sql += " AND nspname LIKE " + escapeQuotes(schemaPattern);
+      // POLAR: resolve Oracle upper-case schema name to stored case when oracleCase is on.
+      sql += " AND nspname LIKE " + escapeQuotes(castNonNull(resolveOraclePattern(null, schemaPattern, true)));
     }
     if (connection.getHideUnprivilegedObjects()) {
       sql += " AND has_schema_privilege(nspname, 'USAGE, CREATE')";
@@ -1494,6 +1507,15 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
   public ResultSet getColumns(@Nullable String catalog, @Nullable String schemaPattern,
       @Nullable String tableNamePattern,
       @Nullable String columnNamePattern) throws SQLException {
+
+    // POLAR: when oracleCase is on, resolve Oracle upper-case schema/table names to the stored
+    // (DTS lower-cased) names so the customer's upper-case habit keeps working (same rules as
+    // getPrimaryKeys). Column names/values are folded to Oracle case on output below.
+    if (metadataOracleCase()) {
+      schemaPattern = resolveOraclePattern(null, schemaPattern, true);
+      tableNamePattern = resolveOraclePattern(schemaPattern, tableNamePattern, false);
+      columnNamePattern = lowerPatternIfOracleCase(columnNamePattern);
+    }
 
     int numberOfFields = 24; // JDBC4
     List<Tuple> v = new ArrayList<Tuple>(); // The new ResultSet tuple stuff
@@ -1598,9 +1620,9 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
       }
 
       tuple[0] = null; // Catalog name, not supported
-      tuple[1] = rs.getBytes("nspname"); // Schema
-      tuple[2] = rs.getBytes("relname"); // Table name
-      tuple[3] = rs.getBytes("attname"); // Column name
+      tuple[1] = foldedBytes(rs, "nspname"); // Schema (Oracle-case folded)
+      tuple[2] = foldedBytes(rs, "relname"); // Table name (Oracle-case folded)
+      tuple[3] = foldedBytes(rs, "attname"); // Column name (Oracle-case folded)
 
       String typtype = rs.getString("typtype");
       int sqlType;
@@ -1744,6 +1766,18 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     f[6] = new Field("PRIVILEGE", Oid.VARCHAR);
     f[7] = new Field("IS_GRANTABLE", Oid.VARCHAR);
 
+    // POLAR: resolve Oracle upper-case schema/table names to stored case when oracleCase is on
+    // (object identifiers are folded on output below; GRANTOR/GRANTEE role names are left as-is).
+    if (metadataOracleCase()) {
+      if (schema != null && !schema.isEmpty()) {
+        schema = resolveOracleName(schema, lookupSchemaNames(schema));
+      }
+      if (table != null && !table.isEmpty()) {
+        table = resolveOracleName(table, lookupTableNames(schema, table));
+      }
+      columnNamePattern = lowerPatternIfOracleCase(columnNamePattern);
+    }
+
     String sql;
 
     sql = "SELECT n.nspname,c.relname,r.rolname,c.relacl, "
@@ -1772,9 +1806,9 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     Statement stmt = connection.createStatement();
     ResultSet rs = stmt.executeQuery(sql);
     while (rs.next()) {
-      byte[] schemaName = rs.getBytes("nspname");
-      byte[] tableName = rs.getBytes("relname");
-      byte[] column = rs.getBytes("attname");
+      byte[] schemaName = foldedBytes(rs, "nspname");
+      byte[] tableName = foldedBytes(rs, "relname");
+      byte[] column = foldedBytes(rs, "attname");
       String owner = castNonNull(rs.getString("rolname"));
       String relAcl = rs.getString("relacl");
 
@@ -1838,10 +1872,13 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
           + " AND c.relowner = r.oid "
           + " AND c.relkind IN ('r','p','v','m','f') ";
 
+    // POLAR: resolve schema first, then resolve the table within the resolved schema.
+    schemaPattern = resolveOraclePattern(null, schemaPattern, true);
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
       sql += " AND n.nspname LIKE " + escapeQuotes(schemaPattern);
     }
 
+    tableNamePattern = resolveOraclePattern(schemaPattern, tableNamePattern, false);
     if (tableNamePattern != null && !tableNamePattern.isEmpty()) {
       sql += " AND c.relname LIKE " + escapeQuotes(tableNamePattern);
     }
@@ -1850,8 +1887,8 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     Statement stmt = connection.createStatement();
     ResultSet rs = stmt.executeQuery(sql);
     while (rs.next()) {
-      byte[] schema = rs.getBytes("nspname");
-      byte[] table = rs.getBytes("relname");
+      byte[] schema = foldedBytes(rs, "nspname");
+      byte[] table = foldedBytes(rs, "relname");
       String owner = castNonNull(rs.getString("rolname"));
       String acl = rs.getString("relacl");
       Map<String, Map<String, List<@Nullable String[]>>> permissions = parseACL(acl, owner);
@@ -2072,6 +2109,15 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
      */
 
     String sql;
+    // POLAR: resolve Oracle upper-case schema/table names to stored case when oracleCase is on.
+    if (metadataOracleCase()) {
+      if (schema != null && !schema.isEmpty()) {
+        schema = resolveOracleName(schema, lookupSchemaNames(schema));
+      }
+      if (table != null && !table.isEmpty()) {
+        table = resolveOracleName(table, lookupTableNames(schema, table));
+      }
+    }
     sql = "SELECT a.attname, a.atttypid, atttypmod "
           + "FROM pg_catalog.pg_class ct "
           + "  JOIN pg_catalog.pg_attribute a ON (ct.oid = a.attrelid) "
@@ -2109,7 +2155,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         columnSize = 4000;
       }
       tuple[0] = connection.encodeString(Integer.toString(scope));
-      tuple[1] = rs.getBytes("attname");
+      tuple[1] = foldedBytes(rs, "attname");
       tuple[2] =
           connection.encodeString(Integer.toString(sqlType));
       tuple[3] = connection.encodeString(connection.getTypeInfo().getPGType(typeOid));
@@ -2152,7 +2198,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
      */
 
     tuple[0] = null;
-    tuple[1] = connection.encodeString("ctid");
+    tuple[1] = connection.encodeString(castNonNull(foldOracleCase("ctid")));
     tuple[2] =
         connection.encodeString(Integer.toString(connection.getTypeInfo().getSQLType("tid")));
     tuple[3] = connection.encodeString("tid");
@@ -2171,6 +2217,20 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
 
   public ResultSet getPrimaryKeys(@Nullable String catalog, @Nullable String schema, String table)
       throws SQLException {
+    // POLAR: When Oracle-style case handling is enabled (oracleCase=true|strict),
+    // identifiers supplied in a different case than the one actually stored (for
+    // instance Oracle upper-case names that DTS migrated to lower-case) are resolved
+    // to the stored catalog name so the customer's original upper-case habit keeps
+    // working. Exact matches always win; see resolveOracleName for the full rules.
+    if (metadataOracleCase()) {
+      if (schema != null && !schema.isEmpty()) {
+        schema = resolveOracleName(schema, lookupSchemaNames(schema));
+      }
+      if (table != null && !table.isEmpty()) {
+        table = resolveOracleName(table, lookupTableNames(schema, table));
+      }
+    }
+
     String sql;
     sql = "SELECT NULL AS TABLE_CAT, n.nspname AS TABLE_SCHEM, "
           + "  ct.relname AS TABLE_NAME, a.attname AS COLUMN_NAME, "
@@ -2194,18 +2254,225 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     sql += " AND i.indisprimary ";
     sql = "SELECT "
             + "       result.TABLE_CAT, "
-            + "       result.TABLE_SCHEM, "
-            + "       result.TABLE_NAME, "
-            + "       result.COLUMN_NAME, "
+            + "       " + oracleCaseValue("result.TABLE_SCHEM") + " AS TABLE_SCHEM, "
+            + "       " + oracleCaseValue("result.TABLE_NAME") + " AS TABLE_NAME, "
+            + "       " + oracleCaseValue("result.COLUMN_NAME") + " AS COLUMN_NAME, "
             + "       result.KEY_SEQ, "
-            + "       result.PK_NAME "
+            + "       " + oracleCaseValue("result.PK_NAME") + " AS PK_NAME "
             + "FROM "
             + "     (" + sql + " ) result"
             + " where "
-            + " result.A_ATTNUM = (result.KEYS).x ";
+            + " result.A_ATTNUM = (result.KEYS).x "
+            // POLAR: PolarDB-O partitioned tables carry a hidden "tableoid" system column
+            // (negative attnum) inside the primary key index so that the key stays globally
+            // unique across partitions; system columns must never be reported as primary key
+            // columns. Also defensively drop PolarDB's internal ROWID column (positive attnum,
+            // excluded by name). Unconditional: wrong metadata is a defect, not a case option.
+            + " AND result.A_ATTNUM > 0 "
+            + " AND result.COLUMN_NAME <> 'polar_sys_rowid_attr' ";
     sql += " ORDER BY result.table_name, result.pk_name, result.key_seq";
 
     return createMetaDataStatement().executeQuery(sql);
+  }
+
+  /**
+   * POLAR: whether Oracle-style DatabaseMetaData case handling is enabled
+   * (oracleMetadataCase = true or strict).
+   */
+  private boolean metadataOracleCase() {
+    return connection.isOracleMetadataCase() || connection.isOracleMetadataCaseStrict();
+  }
+
+  /**
+   * POLAR: Wrap an output identifier column so its value is returned in Oracle case when
+   * {@code oracleCase} is enabled: {@code true} always upper-cases the value, {@code strict}
+   * upper-cases only all-lower-case values and leaves mixed-case ones untouched (matching the
+   * label folding in {@link PgResultSetMetaData}). Returns the column expression unchanged when
+   * oracleCase is off.
+   *
+   * @param column a SQL column reference whose returned value should be case-folded
+   * @return the SQL expression producing the (possibly) folded value
+   */
+  private String oracleCaseValue(String column) {
+    if (connection.isOracleMetadataCase()) {
+      return "upper(" + column + ")";
+    }
+    if (connection.isOracleMetadataCaseStrict()) {
+      return "CASE WHEN " + column + " = lower(" + column + ") THEN upper(" + column + ") ELSE "
+          + column + " END";
+    }
+    return column;
+  }
+
+  /**
+   * POLAR: Java-side counterpart of {@link #oracleCaseValue(String)} for metadata methods that
+   * build their ResultSet manually (e.g. getColumns). Folds an identifier value to Oracle case:
+   * oracleCase=true always upper-cases; oracleCase=strict upper-cases only all-lower-case values.
+   */
+  private @Nullable String foldOracleCase(@Nullable String value) {
+    if (value != null && (connection.isOracleMetadataCase()
+        || (connection.isOracleMetadataCaseStrict() && value.equals(value.toLowerCase(Locale.US))))) {
+      return value.toUpperCase(Locale.US);
+    }
+    return value;
+  }
+
+  /**
+   * POLAR: Encode a catalog string column as bytes, applying Oracle-case folding.
+   */
+  private byte @Nullable [] foldedBytes(ResultSet rs, String column) throws SQLException {
+    String s = rs.getString(column);
+    if (s == null) {
+      return null;
+    }
+    return connection.encodeString(foldOracleCase(s));
+  }
+
+  /**
+   * POLAR: Resolve a wildcard-free schema/table pattern to its stored catalog case when oracleCase
+   * is enabled (same rules as {@link #resolveOracleName}); a pattern containing the LIKE wildcard
+   * {@code %} is lower-cased as a best effort; when oracleCase is off the pattern is returned as-is
+   * (caller keeps its legacy handling).
+   *
+   * @param schemaForTable resolved schema to scope a table lookup (null for a schema lookup)
+   * @param pattern the caller supplied schema/table pattern
+   * @param isSchema true to resolve against pg_namespace, false against pg_class
+   */
+  private @Nullable String resolveOraclePattern(@Nullable String schemaForTable,
+      @Nullable String pattern, boolean isSchema) throws SQLException {
+    if (pattern == null || pattern.isEmpty()
+        || !(metadataOracleCase())) {
+      return pattern;
+    }
+    if (pattern.indexOf('%') >= 0) {
+      return pattern.toLowerCase(Locale.US);
+    }
+    return isSchema ? resolveOracleName(pattern, lookupSchemaNames(pattern))
+        : resolveOracleName(pattern, lookupTableNames(schemaForTable, pattern));
+  }
+
+  /**
+   * POLAR: Best-effort lower-casing of a procedure/function/type name pattern when oracleCase is
+   * on (these object kinds are not relations, so {@link #resolveOracleName} cannot resolve them);
+   * matches the common DTS lower-cased storage so the caller's Oracle upper-case name still hits.
+   * Returned unchanged when oracleCase is off.
+   */
+  private @Nullable String lowerPatternIfOracleCase(@Nullable String pattern) {
+    if (pattern != null && (metadataOracleCase())) {
+      return pattern.toLowerCase(Locale.US);
+    }
+    return pattern;
+  }
+
+  /**
+   * POLAR: Resolve a user supplied identifier (schema or table name) to the name that
+   * is actually stored in the catalog, emulating Oracle-style case folding for objects
+   * whose case changed during migration (e.g. DTS lower-casing Oracle upper-case names).
+   *
+   * <p>Resolution priority:
+   * <ol>
+   *   <li>an exact, case-sensitive match always wins, so objects that only differ in
+   *       case are matched strictly and never merged;</li>
+   *   <li>otherwise, when exactly one case-insensitive match exists it is used;</li>
+   *   <li>otherwise (no match, or an ambiguous set of case-insensitive matches) the
+   *       original input is returned unchanged so the downstream query matches
+   *       strictly and typically returns nothing.</li>
+   * </ol>
+   *
+   * @param input the non-empty identifier supplied by the caller
+   * @param caseInsensitiveMatches distinct catalog names matching {@code input}
+   *        case-insensitively
+   * @return the catalog name to use for the strict lookup
+   */
+  static String resolveOracleName(String input, List<String> caseInsensitiveMatches) {
+    if (caseInsensitiveMatches.contains(input)) {
+      return input;
+    }
+    if (caseInsensitiveMatches.size() == 1) {
+      return caseInsensitiveMatches.get(0);
+    }
+    return input;
+  }
+
+  // POLAR: cached check for the PolarDB-O pg_namespace.nsppkgns column (package/type namespace
+  // marker). Absent on plain PostgreSQL, so its use is guarded.
+  private @Nullable Boolean namespaceHasPackageColumn;
+
+  /**
+   * POLAR: Whether {@code pg_namespace} exposes the {@code nsppkgns} column, which PolarDB-O uses
+   * to distinguish real schemas ({@code nsppkgns = 0}) from package/type namespaces.
+   */
+  private boolean namespaceHasPackageColumn() throws SQLException {
+    Boolean cached = namespaceHasPackageColumn;
+    if (cached == null) {
+      String sql = "SELECT 1 FROM pg_catalog.pg_attribute "
+          + "WHERE attrelid = 'pg_catalog.pg_namespace'::regclass "
+          + "AND attname = 'nsppkgns' AND NOT attisdropped";
+      cached = !querySingleStringColumn(sql).isEmpty();
+      namespaceHasPackageColumn = cached;
+    }
+    return cached;
+  }
+
+  /**
+   * POLAR: List the schema names that match {@code schema} case-insensitively.
+   */
+  private List<String> lookupSchemaNames(String schema) throws SQLException {
+    String sql = "SELECT nspname FROM pg_catalog.pg_namespace "
+        + "WHERE lower(nspname) = lower(" + escapeQuotes(schema) + ")";
+    if (namespaceHasPackageColumn()) {
+      // POLAR: nsppkgns != 0 marks a package/type namespace (e.g. an Oracle package or object
+      // type), not a real schema, so it must not be resolved as one.
+      sql += " AND nsppkgns = 0";
+    }
+    return querySingleStringColumn(sql);
+  }
+
+  /**
+   * POLAR: List the relation names that match {@code table} case-insensitively, optionally
+   * restricted to {@code schema}. Covers every queryable relation kind whose name a caller may
+   * resolve: ordinary tables ('r'), partitioned tables ('p'), materialized views ('m'), views
+   * ('v') and foreign tables ('f'). (PK/index callers simply get no rows for kinds that cannot
+   * carry them.)
+   */
+  private List<String> lookupTableNames(@Nullable String schema, String table)
+      throws SQLException {
+    String sql = "SELECT ct.relname FROM pg_catalog.pg_class ct "
+        + "  JOIN pg_catalog.pg_namespace n ON (ct.relnamespace = n.oid) "
+        + "WHERE ct.relkind IN ('r', 'p', 'm', 'v', 'f') "
+        + "  AND lower(ct.relname) = lower(" + escapeQuotes(table) + ")";
+    if (namespaceHasPackageColumn()) {
+      // POLAR: skip relations that live in a package/type namespace (nsppkgns != 0).
+      sql += " AND n.nsppkgns = 0";
+    }
+    if (schema != null && !schema.isEmpty()) {
+      sql += " AND n.nspname = " + escapeQuotes(schema);
+    }
+    return querySingleStringColumn(sql);
+  }
+
+  /**
+   * POLAR: Run a query returning a single text column and collect the distinct values.
+   */
+  private List<String> querySingleStringColumn(String sql) throws SQLException {
+    List<String> values = new ArrayList<String>();
+    Statement stmt = createMetaDataStatement();
+    try {
+      ResultSet rs = stmt.executeQuery(sql);
+      try {
+        while (rs.next()) {
+          String value = rs.getString(1);
+          if (value != null && !values.contains(value)) {
+            values.add(value);
+          }
+        }
+      } finally {
+        rs.close();
+      }
+    } finally {
+      stmt.close();
+    }
+    return values;
   }
 
   /*
@@ -2254,7 +2521,13 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         + "FROM "
         + "     (" + sql + " ) result"
         + " where "
-        + " result.A_ATTNUM = (result.KEYS).x ";
+        + " result.A_ATTNUM = (result.KEYS).x "
+        // POLAR: drop system columns such as tableoid embedded in a partitioned table's
+        // global unique index, and PolarDB's internal ROWID column, so an updatable
+        // ResultSet never keys on a PolarDB-only pseudo column (Oracle has no equivalent).
+        // Unconditional: wrong metadata is a defect, not a case option.
+        + " AND result.A_ATTNUM > 0 "
+        + " AND result.COLUMN_NAME <> 'polar_sys_rowid_attr' ";
     sql += " ORDER BY result.table_name, result.pk_name, result.key_seq";
 
     return createMetaDataStatement().executeQuery(sql);
@@ -2283,9 +2556,31 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
      * covering the same keys can be created which make it difficult to determine the PK_NAME field.
      */
 
+    // POLAR: resolve Oracle upper-case schema/table names to the stored case when oracleCase is
+    // enabled (same rules as getPrimaryKeys); FK identifier columns are folded to Oracle case in
+    // the SELECT below.
+    if (metadataOracleCase()) {
+      if (primarySchema != null && !primarySchema.isEmpty()) {
+        primarySchema = resolveOracleName(primarySchema, lookupSchemaNames(primarySchema));
+      }
+      if (foreignSchema != null && !foreignSchema.isEmpty()) {
+        foreignSchema = resolveOracleName(foreignSchema, lookupSchemaNames(foreignSchema));
+      }
+      if (primaryTable != null && !primaryTable.isEmpty()) {
+        primaryTable = resolveOracleName(primaryTable, lookupTableNames(primarySchema, primaryTable));
+      }
+      if (foreignTable != null && !foreignTable.isEmpty()) {
+        foreignTable = resolveOracleName(foreignTable, lookupTableNames(foreignSchema, foreignTable));
+      }
+    }
+
     String sql =
-        "SELECT NULL::text AS PKTABLE_CAT, pkn.nspname AS PKTABLE_SCHEM, pkc.relname AS PKTABLE_NAME, pka.attname AS PKCOLUMN_NAME, "
-            + "NULL::text AS FKTABLE_CAT, fkn.nspname AS FKTABLE_SCHEM, fkc.relname AS FKTABLE_NAME, fka.attname AS FKCOLUMN_NAME, "
+        "SELECT NULL::text AS PKTABLE_CAT, " + oracleCaseValue("pkn.nspname") + " AS PKTABLE_SCHEM, "
+            + oracleCaseValue("pkc.relname") + " AS PKTABLE_NAME, "
+            + oracleCaseValue("pka.attname") + " AS PKCOLUMN_NAME, "
+            + "NULL::text AS FKTABLE_CAT, " + oracleCaseValue("fkn.nspname") + " AS FKTABLE_SCHEM, "
+            + oracleCaseValue("fkc.relname") + " AS FKTABLE_NAME, "
+            + oracleCaseValue("fka.attname") + " AS FKCOLUMN_NAME, "
             + "pos.n AS KEY_SEQ, "
             + "CASE con.confupdtype "
             + " WHEN 'c' THEN " + DatabaseMetaData.importedKeyCascade
@@ -2303,7 +2598,8 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
             + " WHEN 'p' THEN " + DatabaseMetaData.importedKeyRestrict
             + " WHEN 'a' THEN " + DatabaseMetaData.importedKeyNoAction
             + " ELSE NULL END AS DELETE_RULE, "
-            + "con.conname AS FK_NAME, pkic.relname AS PK_NAME, "
+            + oracleCaseValue("con.conname") + " AS FK_NAME, "
+            + oracleCaseValue("pkic.relname") + " AS PK_NAME, "
             + "CASE "
             + " WHEN con.condeferrable AND con.condeferred THEN "
             + DatabaseMetaData.importedKeyInitiallyDeferred
@@ -2525,6 +2821,16 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
      * with the single column functional index we need an extra join to the table's pg_attribute
      * data to get the column the function operates on.
      */
+    // POLAR: resolve Oracle upper-case schema/table names to the stored (DTS lower-cased)
+    // names when oracleCase is enabled, mirroring getPrimaryKeys. See resolveOracleName.
+    if (metadataOracleCase()) {
+      if (schema != null && !schema.isEmpty()) {
+        schema = resolveOracleName(schema, lookupSchemaNames(schema));
+      }
+      if (tableName != null && !tableName.isEmpty()) {
+        tableName = resolveOracleName(tableName, lookupTableNames(schema, tableName));
+      }
+    }
     String sql;
     if (connection.haveMinimumServerVersion(ServerVersion.v8_3)) {
       sql = "SELECT NULL AS TABLE_CAT, n.nspname AS TABLE_SCHEM, "
@@ -2538,6 +2844,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
             + "    END "
             + "  END AS TYPE, "
             + "  (information_schema._pg_expandarray(i.indkey)).n AS ORDINAL_POSITION, "
+            // POLAR: carry the underlying column's attnum so system columns (negative attnum,
+            // e.g. tableoid in a partitioned global index) can be filtered out generically,
+            // while expression index columns (attnum 0) and real columns (attnum > 0) are kept.
+            + "  (information_schema._pg_expandarray(i.indkey)).x AS COL_ATTNUM, "
             + "  ci.reltuples AS CARDINALITY, "
             + "  ci.relpages AS PAGES, "
             + "  pg_catalog.pg_get_expr(i.indpred, i.indrelid) AS FILTER_CONDITION, "
@@ -2594,7 +2904,9 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
                 + "    tmp.FILTER_CONDITION "
                 + "FROM ("
                 + sql
-                + ") AS tmp";
+                // POLAR: drop system columns (negative attnum such as tableoid) generically via
+                // attnum, keeping expression indexes (attnum 0) and real columns (attnum > 0).
+                + ") AS tmp WHERE tmp.COL_ATTNUM >= 0";
     } else {
       String select;
       String from;
@@ -2636,6 +2948,23 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         sql += " AND i.indisunique ";
       }
     }
+
+    // POLAR: hide PolarDB's system ROWID column, matching Oracle (which never exposes a ROWID
+    // pseudo-column index). polar_sys_rowid_attr has a positive attnum, so it cannot be removed
+    // by the attnum filter above and must be excluded by name (unconditional defect fix).
+    // Invisible user columns (e.g. the DTS ROWID column) keep their unique constraints, like
+    // Oracle. The oracleCaseValue folding inside no-ops when oracleMetadataCase is off.
+    sql = "SELECT polar_idx.TABLE_CAT, "
+        + "       " + oracleCaseValue("polar_idx.TABLE_SCHEM") + " AS TABLE_SCHEM, "
+        + "       " + oracleCaseValue("polar_idx.TABLE_NAME") + " AS TABLE_NAME, "
+        + "       polar_idx.NON_UNIQUE, polar_idx.INDEX_QUALIFIER, "
+        + "       " + oracleCaseValue("polar_idx.INDEX_NAME") + " AS INDEX_NAME, "
+        + "       polar_idx.TYPE, polar_idx.ORDINAL_POSITION, "
+        + "       " + oracleCaseValue("polar_idx.COLUMN_NAME") + " AS COLUMN_NAME, "
+        + "       polar_idx.ASC_OR_DESC, polar_idx.CARDINALITY, polar_idx.PAGES, "
+        + "       polar_idx.FILTER_CONDITION "
+        + "FROM (" + sql + ") polar_idx "
+        + "WHERE polar_idx.COLUMN_NAME IS NULL OR polar_idx.COLUMN_NAME <> 'polar_sys_rowid_attr' ";
 
     sql += " ORDER BY NON_UNIQUE, TYPE, INDEX_NAME, ORDINAL_POSITION ";
 
@@ -2709,7 +3038,8 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
   public ResultSet getUDTs(@Nullable String catalog, @Nullable String schemaPattern,
       @Nullable String typeNamePattern, int @Nullable [] types) throws SQLException {
     String sql = "select "
-        + "null as type_cat, n.nspname as type_schem, t.typname as type_name,  null as class_name, "
+        + "null as type_cat, " + oracleCaseValue("n.nspname") + " as type_schem, "
+        + oracleCaseValue("t.typname") + " as type_name,  null as class_name, "
         + "CASE WHEN t.typtype='c' then " + java.sql.Types.STRUCT + " else "
         + java.sql.Types.DISTINCT
         + " end as data_type, pg_catalog.obj_description(t.oid, 'pg_type')  "
@@ -2770,12 +3100,12 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         // strip out just the typeName
         typeNamePattern = typeNamePattern.substring(secondQualifier + 1);
       }
-      toAdd.append(" and t.typname like ").append(escapeQuotes(typeNamePattern));
+      toAdd.append(" and t.typname like ").append(escapeQuotes(castNonNull(lowerPatternIfOracleCase(typeNamePattern))));
     }
 
     // schemaPattern may have been modified above
     if (schemaPattern != null) {
-      toAdd.append(" and n.nspname like ").append(escapeQuotes(schemaPattern));
+      toAdd.append(" and n.nspname like ").append(escapeQuotes(castNonNull(resolveOraclePattern(null, schemaPattern, true))));
     }
     sql += toAdd.toString();
 
@@ -2876,10 +3206,11 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
 
     // Build query and result
     String sql;
-    sql = "SELECT current_database() AS FUNCTION_CAT, n.nspname AS FUNCTION_SCHEM, p.proname AS FUNCTION_NAME, "
+    sql = "SELECT current_database() AS FUNCTION_CAT, " + oracleCaseValue("n.nspname") + " AS FUNCTION_SCHEM, "
+        + oracleCaseValue("p.proname") + " AS FUNCTION_NAME, "
         + " d.description AS REMARKS, "
         + funcTypeSql + " AS FUNCTION_TYPE, "
-        + " p.proname || '_' || p.oid AS SPECIFIC_NAME "
+        + oracleCaseValue("p.proname || '_' || p.oid") + " AS SPECIFIC_NAME "
         + "FROM pg_catalog.pg_proc p "
         + "INNER JOIN pg_catalog.pg_namespace n ON p.pronamespace=n.oid "
         + "LEFT JOIN pg_catalog.pg_description d ON p.oid=d.objoid "
@@ -2892,10 +3223,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     if the user provides a schema then search inside the schema for it
      */
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
-      sql += " AND n.nspname LIKE " + escapeQuotes(schemaPattern);
+      sql += " AND n.nspname LIKE " + escapeQuotes(castNonNull(resolveOraclePattern(null, schemaPattern, true)));
     }
     if (functionNamePattern != null && !functionNamePattern.isEmpty()) {
-      sql += " AND p.proname LIKE " + escapeQuotes(functionNamePattern);
+      sql += " AND p.proname LIKE " + escapeQuotes(castNonNull(lowerPatternIfOracleCase(functionNamePattern)));
     }
     if (connection.getHideUnprivilegedObjects()) {
       sql += " AND has_function_privilege(p.oid,'EXECUTE')";
@@ -2937,10 +3268,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         + " FROM pg_catalog.pg_proc p, pg_catalog.pg_namespace n, pg_catalog.pg_type t "
         + " WHERE p.pronamespace=n.oid AND p.prorettype=t.oid ";
     if (schemaPattern != null && !schemaPattern.isEmpty()) {
-      sql += " AND n.nspname LIKE " + escapeQuotes(schemaPattern);
+      sql += " AND n.nspname LIKE " + escapeQuotes(castNonNull(resolveOraclePattern(null, schemaPattern, true)));
     }
     if (functionNamePattern != null && !functionNamePattern.isEmpty()) {
-      sql += " AND p.proname LIKE " + escapeQuotes(functionNamePattern);
+      sql += " AND p.proname LIKE " + escapeQuotes(castNonNull(lowerPatternIfOracleCase(functionNamePattern)));
     }
     sql += " ORDER BY n.nspname, p.proname, p.oid::text ";
 
@@ -2949,10 +3280,10 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
     Statement stmt = connection.createStatement();
     ResultSet rs = stmt.executeQuery(sql);
     while (rs.next()) {
-      byte[] schema = rs.getBytes("nspname");
-      byte[] functionName = rs.getBytes("proname");
+      byte[] schema = foldedBytes(rs, "nspname");
+      byte[] functionName = foldedBytes(rs, "proname");
       byte[] specificName =
-          connection.encodeString(rs.getString("proname") + "_" + rs.getString("oid"));
+          connection.encodeString(castNonNull(foldOracleCase(rs.getString("proname") + "_" + rs.getString("oid"))));
       int returnType = (int) rs.getLong("prorettype");
       String returnTypeType = rs.getString("typtype");
       int returnTypeRelid = (int) rs.getLong("typrelid");
@@ -3020,7 +3351,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
         tuple[2] = functionName;
 
         if (argNames != null) {
-          tuple[3] = connection.encodeString(argNames[i]);
+          tuple[3] = connection.encodeString(castNonNull(foldOracleCase(argNames[i])));
         } else {
           tuple[3] = connection.encodeString("$" + (i + 1));
         }
@@ -3077,7 +3408,7 @@ public class PgDatabaseMetaData implements DatabaseMetaData {
           tuple[0] = null;
           tuple[1] = schema;
           tuple[2] = functionName;
-          tuple[3] = columnrs.getBytes("attname");
+          tuple[3] = foldedBytes(columnrs, "attname");
           tuple[4] = connection
               .encodeString(Integer.toString(java.sql.DatabaseMetaData.functionColumnResult));
           tuple[5] = connection

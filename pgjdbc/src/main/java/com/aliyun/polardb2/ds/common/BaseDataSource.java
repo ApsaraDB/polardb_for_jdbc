@@ -1912,6 +1912,14 @@ public abstract class BaseDataSource implements CommonDataSource, Referenceable 
     PGProperty.ORACLE_CASE.set(properties, oracleCase);
   }
 
+  public String getOracleMetadataCase() {
+    return PGProperty.ORACLE_METADATA_CASE.getOrDefault(properties);
+  }
+
+  public void setOracleMetadataCase(String oracleMetadataCase) {
+    PGProperty.ORACLE_METADATA_CASE.set(properties, oracleMetadataCase);
+  }
+
   public String getNlsLocaleInit() {
     return PGProperty.NLS_LOCALE_INIT.getOrDefault(properties);
   }

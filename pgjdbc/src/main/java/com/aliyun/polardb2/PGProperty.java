@@ -608,6 +608,18 @@ public enum PGProperty {
       false,
       new String[] {"true", "false", "strict"}),
 
+  /* POLAR: Oracle-style case handling for DatabaseMetaData only. Kept separate from ORACLE_CASE
+   * so that upgrading drivers does not silently change metadata results for existing oracleCase
+   * users; disabled by default (legacy metadata behaviour). */
+  ORACLE_METADATA_CASE(
+      "oracleMetadataCase",
+      "false",
+      "Enable Oracle-style DatabaseMetaData behaviour: resolve upper-case schema/table/object "
+          + "names to the stored case, fold returned identifiers to upper case (true always, "
+          + "strict only all-lower-case values) and hide PolarDB-only system/rowid columns.",
+      false,
+      new String[] {"true", "false", "strict"}),
+
   /**
    * Password to use when authenticating.
    */

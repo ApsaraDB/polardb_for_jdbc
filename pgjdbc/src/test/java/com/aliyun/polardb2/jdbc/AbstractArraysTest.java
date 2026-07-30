@@ -1044,6 +1044,22 @@ public abstract class AbstractArraysTest<A> {
      * {@inheritDoc}
      */
     @Override
+    public boolean isOracleMetadataCase() {
+      return false;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean isOracleMetadataCaseStrict() {
+      return false;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public boolean isAutoCommitSpecCompliant() {
       return false;
     }

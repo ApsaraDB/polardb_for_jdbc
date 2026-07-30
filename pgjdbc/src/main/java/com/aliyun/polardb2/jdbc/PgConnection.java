@@ -197,6 +197,9 @@ public class PgConnection implements BaseConnection {
   /* POLAR DIFF */
   private boolean mapDateToTimestamp = false;
   private int oracleCase = 0;
+  /* POLAR: Oracle-style DatabaseMetaData case handling (oracleMetadataCase), independent of
+   * oracleCase so upgrades keep legacy metadata behaviour unless explicitly enabled. */
+  private int oracleMetadataCase = 0;
   private boolean autoCommitSpecCompliant = true;
   private boolean namedParam = false;
   private boolean collectWarning = true;
@@ -539,6 +542,13 @@ public class PgConnection implements BaseConnection {
       this.oracleCase = 1;
     } else if (oracleCaseLabel.equalsIgnoreCase("strict")) {
       this.oracleCase = 2;
+    }
+    // POLAR: metadata-only Oracle case handling, default off (legacy behaviour).
+    String oracleMetadataCaseLabel = PGProperty.ORACLE_METADATA_CASE.getOrDefault(info);
+    if (oracleMetadataCaseLabel.equalsIgnoreCase("true")) {
+      this.oracleMetadataCase = 1;
+    } else if (oracleMetadataCaseLabel.equalsIgnoreCase("strict")) {
+      this.oracleMetadataCase = 2;
     }
     this.autoCommit = PGProperty.AUTO_COMMIT.getBoolean(info);
     this.autoCommitSpecCompliant = PGProperty.AUTO_COMMIT_SPEC_COMPLIANT.getBoolean(info);
@@ -2415,6 +2425,16 @@ public class PgConnection implements BaseConnection {
   @Override
   public boolean isOracleCaseStrict() {
     return oracleCase == 2;
+  }
+
+  @Override
+  public boolean isOracleMetadataCase() {
+    return oracleMetadataCase == 1;
+  }
+
+  @Override
+  public boolean isOracleMetadataCaseStrict() {
+    return oracleMetadataCase == 2;
   }
 
   @Override

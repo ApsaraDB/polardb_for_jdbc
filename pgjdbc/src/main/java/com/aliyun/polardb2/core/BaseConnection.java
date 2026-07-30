@@ -264,6 +264,20 @@ public interface BaseConnection extends PGConnection, Connection {
   boolean isOracleCaseStrict();
 
   /**
+   * Returns whether Oracle-style DatabaseMetaData case handling (oracleMetadataCase=true) is on.
+   *
+   * @return oracleMetadataCase=true setting
+   */
+  boolean isOracleMetadataCase();
+
+  /**
+   * Returns whether Oracle-style DatabaseMetaData case handling (oracleMetadataCase=strict) is on.
+   *
+   * @return oracleMetadataCase=strict setting
+   */
+  boolean isOracleMetadataCaseStrict();
+
+  /**
    * Returns the autoCommitSpecCompliant connection setting.
    *
    * @return autoCommitSpecCompliant setting
