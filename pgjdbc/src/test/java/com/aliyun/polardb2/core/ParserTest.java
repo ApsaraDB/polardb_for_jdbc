@@ -423,4 +423,44 @@ public class ParserTest {
     String sql = qry.get(0).nativeSql;
     Assert.assertTrue("Division operator should be preserved", sql.contains("10 / 2"));
   }
+
+  /**
+   * POLAR: CREATE PACKAGE preceded by line comments must still be recognized as a
+   * single block and not be split on the semicolons of its variable declarations.
+   */
+  @Test
+  public void testCreatePackageWithLeadingComments() throws SQLException {
+    String query = "-----------------------------------------\n"
+        + "-- MOD. DATE : 20 Dec 2020\n"
+        + "-- MOD. DESC : Clone NFO_CD for CWS Revamp\n"
+        + "-----------------------------------------\n"
+        + "CREATE OR REPLACE PACKAGE PCF_CD\n"
+        + "IS\n"
+        + "   nfo_pol_num   VARCHAR2(10) := ' ';\n"
+        + "   nfo_date      DATE := null;\n"
+        + "   nfo_gross_cv  NUMBER(15,2) := 0;  -- trailing comment\n"
+        + "END;";
+    List<NativeQuery> qry =
+        Parser.parseJdbcSql(query, true, false, true, false, true, false, false);
+    Assert.assertNotNull(qry);
+    Assert.assertEquals("Package with leading comments should produce one query", 1, qry.size());
+    String sql = qry.get(0).nativeSql;
+    Assert.assertTrue("All declarations should stay in the single query",
+        sql.contains("nfo_pol_num") && sql.contains("nfo_gross_cv") && sql.contains("END"));
+  }
+
+  /**
+   * POLAR: comment stripping for the keyword scan must not eat semicolons in string
+   * literals containing dashes, i.e. plain multi-statement split still works.
+   */
+  @Test
+  public void testMultiStatementSplitWithDashInLiteral() throws SQLException {
+    String query = "select '--not a comment; still text' ; select 2";
+    List<NativeQuery> qry =
+        Parser.parseJdbcSql(query, true, false, true, false, true, false, false);
+    Assert.assertNotNull(qry);
+    Assert.assertEquals("Two statements expected", 2, qry.size());
+    Assert.assertTrue("Literal must be preserved",
+        qry.get(0).nativeSql.contains("--not a comment; still text"));
+  }
 }

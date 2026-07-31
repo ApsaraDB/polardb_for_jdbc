@@ -93,11 +93,13 @@ public class Parser {
     int keywordEnd = -1;
     boolean polarIsCast = false;
 
-    String queryTemp = query.trim();
+    // Set the comment style before any comment parsing (removeCommentsForKeywordScan
+    // relies on parseBlockComment which honors isOraCommentStyle)
+    isOraCommentStyle = commentStyle;
+    String queryTemp = removeCommentsForKeywordScan(query, standardConformingStrings).trim();
     queryTemp = queryTemp.replaceAll("\\s+", "\0");
     String[] queryArr = queryTemp.split("\0");
     boolean haveSpecialKeyword = isContainSpecialKeyword(queryArr);
-    isOraCommentStyle = commentStyle;
 
     /*
     loop through looking for keywords, single quotes, double quotes, comments, dollar quotes,
@@ -802,6 +804,63 @@ public class Parser {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Remove line and block comments from the query so that the keyword scan of
+   * {@link #isContainSpecialKeyword(String[])} is not confused by leading or inline
+   * comments (e.g. a CREATE PACKAGE statement preceded by a {@code --} comment header
+   * would otherwise not be recognized as a single block and be split on semicolons).
+   * String literals and quoted identifiers are preserved as-is.
+   *
+   * @param query                     jdbc query
+   * @param standardConformingStrings whether backslashes are escape characters in literals
+   * @return the query text with comments replaced by a single space
+   */
+  private static String removeCommentsForKeywordScan(String query,
+      boolean standardConformingStrings) {
+    final char[] aChars = query.toCharArray();
+    final StringBuilder sb = new StringBuilder(aChars.length);
+    for (int i = 0; i < aChars.length; i++) {
+      char aChar = aChars[i];
+      int end;
+      switch (aChar) {
+        case '\'':
+          end = parseSingleQuotes(aChars, i, standardConformingStrings);
+          end = Math.min(end, aChars.length - 1);
+          sb.append(aChars, i, end - i + 1);
+          i = end;
+          break;
+        case '"':
+          end = parseDoubleQuotes(aChars, i);
+          end = Math.min(end, aChars.length - 1);
+          sb.append(aChars, i, end - i + 1);
+          i = end;
+          break;
+        case '-':
+          end = parseLineComment(aChars, i);
+          if (end != i) {
+            sb.append(' ');
+            i = end;
+          } else {
+            sb.append(aChar);
+          }
+          break;
+        case '/':
+          end = parseBlockComment(aChars, i);
+          if (end != i) {
+            sb.append(' ');
+            i = end;
+          } else {
+            sb.append(aChar);
+          }
+          break;
+        default:
+          sb.append(aChar);
+          break;
+      }
+    }
+    return sb.toString();
   }
 
   /**
