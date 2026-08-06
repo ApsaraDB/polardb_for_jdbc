@@ -373,6 +373,37 @@
                 <version>3.3.0</version>
             </plugin>
 
+            <!-- GPG signing is part of the default build because the release platform
+                 runs "mvn ... package deploy" without activating any profile, and
+                 Maven Central requires a .asc signature for every artifact.
+                 Local builds without a GPG key can opt out with -Dgpg.skip=true.
+                 The passphrase is read from the GPG_PASSPHRASE env variable (CI). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <passphrase>${env.GPG_PASSPHRASE}</passphrase>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <!-- Bound to package (not verify) so signatures are produced
+                             even when the build stops at the package phase -->
+                        <phase>package</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -596,44 +627,10 @@
 
         <profile>
             <id>central</id>
-
+            <!-- Kept for backwards compatibility; GPG signing and the Central publishing
+                 plugin now run in the default build (the release platform activates no profile). -->
             <build>
-                <pluginManagement>
-                    <plugins>
-                        <!-- Sign JARs -->
-                        <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-gpg-plugin</artifactId>
-                            <version>3.1.0</version>
-                            <configuration>
-                                <!-- Passphrase can be injected via the GPG_PASSPHRASE env variable (CI) -->
-                                <passphrase>${env.GPG_PASSPHRASE}</passphrase>
-                            </configuration>
-                            <executions>
-                                <execution>
-                                    <id>sign-artifacts</id>
-                                    <phase>verify</phase>
-                                    <goals>
-                                        <goal>sign</goal>
-                                    </goals>
-                                    <configuration>
-                                        <gpgArguments>
-                                            <arg>--pinentry-mode</arg>
-                                            <arg>loopback</arg>
-                                        </gpgArguments>
-                                    </configuration>
-                                </execution>
-                            </executions>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
-
                 <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-gpg-plugin</artifactId>
-                    </plugin>
-
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
