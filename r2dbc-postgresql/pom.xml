@@ -30,7 +30,7 @@
     -->
     <groupId>com.aliyun</groupId>
     <artifactId>r2dbc-polardb</artifactId>
-    <version>1.2.0.BUILD-SNAPSHOT</version>
+    <version>1.2.1</version>
     <packaging>jar</packaging>
 
     <name>PolarDB Reactive Database Connectivity Driver (R2DBC)</name>
