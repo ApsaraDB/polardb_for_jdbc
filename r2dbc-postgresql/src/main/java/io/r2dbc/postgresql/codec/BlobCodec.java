@@ -1,0 +1,121 @@
+/*
+ * Copyright 2017 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package io.r2dbc.postgresql.codec;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.Unpooled;
+import io.r2dbc.postgresql.client.EncodedParameter;
+import io.r2dbc.postgresql.message.Format;
+import io.r2dbc.postgresql.util.Assert;
+import io.r2dbc.spi.Blob;
+import org.jspecify.annotations.Nullable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+import java.nio.ByteBuffer;
+import java.util.Collections;
+
+import static io.r2dbc.postgresql.codec.PostgresqlObjectId.BYTEA;
+import static io.r2dbc.postgresql.message.Format.FORMAT_TEXT;
+
+final class BlobCodec extends AbstractCodec<Blob> {
+
+    private final ByteBufAllocator byteBufAllocator;
+
+    BlobCodec(ByteBufAllocator byteBufAllocator) {
+        super(Blob.class);
+        this.byteBufAllocator = Assert.requireNonNull(byteBufAllocator, "byteBufAllocator must not be null");
+    }
+
+    @Override
+    public EncodedParameter encodeNull() {
+        return createNull(FORMAT_TEXT, BYTEA);
+    }
+
+    @Override
+    boolean doCanDecode(PostgresqlObjectId type, Format format) {
+        Assert.requireNonNull(format, "format must not be null");
+        Assert.requireNonNull(type, "type must not be null");
+
+        return BYTEA == type;
+    }
+
+    @Override
+    Blob doDecode(ByteBuf buffer, PostgresTypeIdentifier dataType, @Nullable Format format, @Nullable Class<? extends Blob> type) {
+        Assert.requireNonNull(buffer, "byteBuf must not be null");
+
+        return new ByteABlob(buffer, format);
+    }
+
+    @Override
+    EncodedParameter doEncode(Blob value) {
+        return doEncode(value, BYTEA);
+    }
+
+    @Override
+    EncodedParameter doEncode(Blob value, PostgresTypeIdentifier dataType) {
+        Assert.requireNonNull(value, "value must not be null");
+
+        return create(FORMAT_TEXT, dataType,
+            Flux.from(value.stream())
+                .reduce(this.byteBufAllocator.compositeBuffer(), (a, b) -> a.addComponent(true, Unpooled.wrappedBuffer(b)))
+                .map(it -> AbstractBinaryCodec.encodeToHex(it, this.byteBufAllocator))
+                .concatWith(Flux.from(value.discard())
+                    .then(Mono.empty()))
+        );
+    }
+
+    @Override
+    public Iterable<PostgresTypeIdentifier> getDataTypes() {
+        return Collections.singleton(BYTEA);
+    }
+
+    private static final class ByteABlob implements Blob {
+
+        private final ByteBuf byteBuf;
+
+        private final Format format;
+
+        private ByteABlob(ByteBuf byteBuf, Format format) {
+            this.byteBuf = byteBuf.retain();
+            this.format = format;
+        }
+
+        @Override
+        public Mono<Void> discard() {
+            return Mono.fromRunnable(() -> {
+                if (this.byteBuf.refCnt() > 0) {
+                    this.byteBuf.release();
+                }
+            });
+        }
+
+        @Override
+        public Mono<ByteBuffer> stream() {
+            return Mono.fromSupplier(() -> {
+                if (this.format == Format.FORMAT_BINARY) {
+                    return this.byteBuf.nioBuffer();
+                }
+
+                return ByteBuffer.wrap(AbstractBinaryCodec.decodeFromHex(this.byteBuf));
+            }).doAfterTerminate(this.byteBuf::release);
+        }
+
+    }
+
+}

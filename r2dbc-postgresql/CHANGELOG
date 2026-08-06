@@ -1,0 +1,536 @@
+R2DBC PostgreSQL Changelog
+=============================
+
+1.1.0.RELEASE
+-----------------------------------------
+* Cancel signal does not interrupt cursored query fetching #536
+* Implement support for interval units. #566
+* Bump postgresql from 42.5.0 to 42.5.1 #568
+* Remove rogue newline in readme #569
+* Expose API to subscribe to Postgres notice messages #570
+* Integration test fails on JDK > 8 because of Instant resolution change #572
+* Error when storing BC dates (e.g. "0000-12-31T01:01:00Z") #578
+* Bump Netty to 4.1.89.Final, CVE-2022-41915 #584
+* Upgrade to Project Reactor 2022.0.3 #585
+* Add codecs for `DayOfWeek`, `Month`, `MonthDay`, `Period`, `Year`, `YearMonth` #591
+* key param javadoc description #593
+* Adapt integration test to be Java 11 forward-compatible #594
+* Creating connections can hang during server downtime #595
+* Driver reports I/O error when rowsUpdated is greater than Integer.MAX_VALUE #597
+* Upgrade dependencies #599
+* Make `CodecMetadata.getDataTypes()` more flexible #600
+* Add `PostgresqlResult.filter(…)` overrides to return `PostgresqlResult` instead of `Result` #602
+* Upgrade to Reactor 2022.0.9 #604
+* Support for pgvector #612
+* Add support for dynamic usernames and passwords #613
+* Upgrade dependencies #616
+* Do not require `typarray` column when auto-registering extensions #621
+* `NullPointerException` at `SingleHostConnectionFunction#getCredentials` when configuration password is `null` #622
+* Upgrade dependencies #628
+* Do not require typarray column when auto-registering extensions #632
+* README.md #633
+* Set SNI on SSL connections #634
+* Performance issue with PostgresqlRow.getColumn(String name) when select many columns #636
+* Bump org.postgresql:postgresql from 42.6.0 to 42.7.2 #637
+* Resolve a LEAK warning in unit test #642
+* Update SCRAM dependency to 3.0 #645
+* Defer oid and typarray to stage when an extension is supported #649
+* Add support for `sslnegotation=direct` #651
+* SNIHostName is going to throw an exception when hostname has a trailing dot #656
+* Postgres 11 compatibility #657
+* Update scram-client to 3.1 #659
+* Introduce fast-path handling for decoding primitive values #662
+* Introduce `ObjectCodec` to support `bindNull(Object.class)` #664
+* Explore acquisition scheduler offloading #668
+* Fix self-suppression when standby is unavailable #678
+* Include `OID` explicitly in the `SELECT` clause for older Postgres databases #680
+* Switch to Sonatype Central Publishing #681
+* Bump com.ongres.scram:scram-common from 3.1 to 3.2 #682
+* Upgrade to JTS 1.20.0 #688
+* Add JSpecify nullability annotations to Java APIs #689
+* Ensure Java 8 `ByteBuffer`API usage #690
+
+1.0.8.RELEASE
+-----------------------------------------
+* Add codecs for `DayOfWeek`, `Month`, `MonthDay`, `Period`, `Year`, `YearMonth` #591
+* Fix self-suppression when standby is unavailable #678
+* Include `OID` explicitly in the `SELECT` clause for older Postgres databases #680
+* Switch to Sonatype Central Publishing #681
+
+1.0.7.RELEASE
+-----------------------------------------
+* Explore acquisition scheduler offloading #668
+
+1.0.6.RELEASE
+-----------------------------------------
+* Defer oid and typarray to stage when an extension is supported #649
+* SNIHostName is going to throw an exception when hostname has a trailing dot #656
+* Postgres 11 compatibility #657
+* Introduce fast-path handling for decoding primitive values #662
+* Introduce `ObjectCodec` to support `bindNull(Object.class)` #664
+
+1.0.5.RELEASE
+-----------------------------------------
+* Do not require typarray column when auto-registering extensions #632
+* Set SNI on SSL connections #634
+* Performance issue with PostgresqlRow.getColumn(String name) when select many columns #636
+* Resolve a LEAK warning in unit test #642
+
+
+1.0.4.RELEASE
+-----------------------------------------
+* Do not require `typarray` column when auto-registering extensions #621
+* `NullPointerException` at `SingleHostConnectionFunction#getCredentials` when configuration password is `null` #622
+* Upgrade dependencies #628
+
+1.0.3.RELEASE
+-----------------------------------------
+* Support for pgvector #612
+* Add support for dynamic usernames and passwords #613
+* Upgrade dependencies #616
+
+1.0.2.RELEASE
+-----------------------------------------
+* Cancel signal does not interrupt cursored query fetching #536
+* Expose API to subscribe to Postgres notice messages #570
+* key param javadoc description #593
+* Adapt integration test to be Java 11 forward-compatible #594
+* Creating connections can hang during server downtime #595
+* Driver reports I/O error when rowsUpdated is greater than Integer.MAX_VALUE #597
+* Add `PostgresqlResult.filter(…)` overrides to return `PostgresqlResult` instead of `Result` #602
+* Upgrade to Reactor 2022.0.9 #604
+
+1.0.0.RELEASE
+-----------------------------------------
+* Associate `PostgresConnectionClosedException` with error code `08006` #538
+* Bump postgresql from 42.4.0 to 42.4.1 #539
+* Await `ReadyForQuery` before emitting errors from transactional control methods #541
+* SRID not preserved in Geometry types (Point) since it is encoded as text using the WKTWriter #542
+* Release 1.0.0.RELEASE #544
+* Add GraalVM native reflection hints #549
+* Allow `StringCodec` registration for `CITEXT` usage #551
+* Upgrade to Reactor 2022.0.0 #554
+* Fix `LocalTimeCodec` array OID #555
+* Fix `NumericDecodeUtils.decodeBinary(byteBuf)` decoding #558
+* Ensure buffer release on copyIn failure #560
+
+1.0.0.RC1
+-----------------------------------------
+* Support for Postgresql multi-host failover functionality #120
+* Parameter values are not sent in the correct order #482
+* Support for postgis geometry parent type #483
+* Let `Result.getRowsUpdated()` return `Long` #484
+* Remove deprecated `RowMetadata.getColumnNames()` method #485
+* Consider lowercase `sslmode` for easier JDBC URL adaption #486
+* Can't process CITEXT #488
+* ReactorNettyClient `requestProcessor` can retain data from queries #492
+* Update Readme as LOB types are already supported #493
+* Upgrade to postgresql 42.3.3 #494
+* Fix postgres OID type decoding #495
+* Release 0.8.12.RELEASE #496
+* Add `COPY FROM` support #500
+* Upgrade to Reactor 2022.0.0-M1 #503
+* Upgrade to Reactor 2022.0.0-M2 #506
+* Upgrade to R2DBC 1.0 #508
+* Issue parsing timestamp with timezone having offset of format `+hh:mm:ss` #509
+* `CachedCodecLookup` wrongly assumes uniqueness of `hashCode()` #511
+* Extend `PostgresqlSqlLexer` to handle PG14 SQL-standard function body syntax #512
+* Upgrade to netty 4.1.77.Final to address epoll_wait() not implemented on Linux #514
+* using an EnumCodec with no enums generates invalid SQL #515
+* Add configuration for `TimeZone` #520
+* Align `LocalDate` conversion to configured time zone #521
+
+0.9.0.RELEASE
+-----------------------------------------
+* Polishing #478
+
+0.9.0.RC1
+-----------------------------------------
+* Upgrade to R2DBC 0.9.0.RELEASE #473
+* Adopt renamed TCK column name #472
+* NumberFormatException in BuiltinDynamicCodecs when reading oid value #470
+* Truncated the values tested in time-related unit tests to their micro… #469
+* Lexing sql statements #468
+* Move off deprecated Reactor Netty API #464
+* Let `Statement.add()` always create a new binding set #463
+* Use sequential processing in `Result.flatMap(…)` #462
+* Buffers in `SSLSessionHandlerAdapter` not released after decoding #458
+* Propagate offending SQL into R2DBC exceptions #457
+* Align `Statement.bind(…)` and `Readable.get(…)` exceptions with specification #456
+* Upgrade to R2DBC SPI 0.9 RC1 #455
+* Add support to decode enums and other types as `String` #454
+* SSL=False Option isn't working #453
+* Upgrade dependencies #448
+* Remove usage of `java.security.AccessController` #447
+* Replace `EmitterProcessor` with `Sinks` API #445
+* Introduce codec mapping caches (0.8.x branch) #444
+* Updated rows from batch should not be aggregated #440
+* Remove restriction on ending semicolon in ExtendedQueryPostgresStatement #439
+* Avoid cast to X509Certificate array during certificate verification #438
+* Add support for reading arbitrary enum values as `String` #429
+* Introduce codec mapping caches #410
+* Add support to re-prepare cached statements #382
+
+0.9.0.M2
+-----------------------------------------
+* Invalid string formatting in `PostgresTypes.lookupType` #437
+* Adding Extension from Option #433
+* Upgrade to R2DBC SPI 0.9.0.M2 #425
+* Add support for Result segment API #424
+* Add `Row.getMetadata()` method #423
+* Adapt to changed `Option.getRequiredValue()` return type #422
+* PostgresObjectId#isValid uses exception as control mechanism resulting in significant performance penalty #420
+* Memory Leak of BalancedResolverGroup #412
+* Multi-byte characters inside HStore columns are not read correctly #407
+* PG Bouncer tests fail with [08P01] password authentication failed #402
+* Fetch rows never completes #401
+* QueryLogger not used by ExtendedFlowDelegate #400
+* Add BooleanArrayCodec, FloatArrayCodec, DoubleArrayCodec support #399
+* Overflow Exception when fetchSize is set #395
+* Can't bind Boolean[] types #394
+* Introduce connection factory option for statementTimeout #381
+
+0.9.0.M1
+-----------------------------------------
+* Upgrade to R2DBC SPI 0.9.0.M1 #388
+* Upgrade to Reactor 2020.0.3 #380
+* Add support for extended transaction definitions #379
+* Add support for SPI Parameters #378
+* Unable to insert a new entity in a table containing name "returning" #377
+* Update license headers to report the inception year instead of start-end range #369
+* Decoding CopyOutResponse message does not comply with postgres documentation #367
+* Make JsonIntegrationTests extend AbstractIntegrationTests #364
+* Upgrade to Testcontainers 1.15.0 #363
+* Unable to decode array_agg(varchar) type. #361
+* Remove travis build file as we no longer need travis-ci #359
+* Map postgres' 40001 error code to PostgresqlRollbackException #355
+* Add BigDecimal array codec #349
+* Refactor dead if branch into single return flow #348
+* Restrict CI and release task to pgjdbc/r2dbc-postgresql repo #347
+* Add Interval Codec #345
+* Upgrade dependencies #343
+* Extended flow queries hang with pgpool 4.1 #341
+* Replace casts to ByteBuffer after ByteBuffer.flip #340
+* Introduce connection context to allow correlation of log statements to the actual connection #339
+* Use RoundRobinInetAddressResolver for DNS resolution #338
+* RowMetadata.getColumnNames() iteration order doesn't match result set column order #337
+* Add UUID array codec #336
+* Occasional delays caused by TCP NoDelay config option defaulting to false #334
+* Upgrade to R2DBC SPI 0.8.3 #333
+* Use detached byte buffers by default for decoded values #330
+* JsonCodec.encode(…) doesn't release input buffer #329
+* Upgrade to Assertj 3.17.2 #328
+* Upgrade to Netty 4.1.51.Final #327
+* Upgrade to Reactor Dysprosium SR11 #326
+* Use GitHub actions to deploy to OSS Sonatype/Maven Central #325
+* Issue parsing UTC timestamptz from CockroachDB #320
+* Possibility to configure LoopResources  inside ReactorNettyClient  #319
+* Accept SSL certificates by providing a URL to use cert from within a jar #313
+* Add priority to EnumCodec registrar #310
+* EnumCodec's canDecode method fix (Issue #302) #308
+* Support for geospatial types - point, line, box, polygon etc #306
+* NullPointerExceptionwhen adding SSL handler via SSLTunnelHandlerAdapter #304
+* Add priority to EnumCodec registrar #303
+* EnumCodec decoding fails if the requested value type is Object #302
+* Row.decode(…) fails for enum type with IllegalArgumentException: 72093 is not a valid object id #301
+* Ensure no snapshots get referenced in release builds #299
+* Add config options for TCP nodelay and keepalive #296
+* Add support for SSL tunnels #295
+* Support for "time with time zone" type #294
+* Query doesn't complete #292
+* Upgrade to Reactor Dysprosium SR9 #291
+* Rename master branch to main #290
+* Upgrade to Reactor Dysprosium SR8 #289
+* Move repository to pgjdbc organization #287
+* SSL Mode configuration is not working anymore with v0.8.3.RELEASE #286
+* Infinite drainLoop call in BackendMessageSubscriber #285
+* Add support for point type #283
+* Support for geospatial types - point, line, box, polygon etc #282
+* Upgrade dependencies #281
+* Introduce OptionMapper for option mapping #279
+* add capability to log query parameters (bindings) values #278
+* Add BlockHound to integration tests #276
+* static initializers of StartupMessage cause blocking calls #275
+* Connection in unstable state when rollback after a failed commit #274
+* adds capability to specify connections options via URL #273
+* add support for providing "search_path" connection option #271
+* Fix typo #270
+* Support hstore as default codec #268
+* Upgrade build plugin and test dependencies #266
+* Upgrade to netty 4.1.47.Final #265
+* Upgrade to Reactor Dysprosium-SR6 #264
+* Upgrade to testcontainers 1.13.0 #261
+* Stage releases directly on maven central #259
+* Default fetch size #256
+* IllegalStateException when reading empty byte array #253
+* Allow configuration of ErrorResponse and NoticeResponse logging #249
+* Canceling requests in progress with CancelRequest #246
+* Fetch size implementation #245
+* Add codec for Postgres enumerated types #244
+* Add fast-path emission of incoming frames #243
+* High CPU usage when cancelled query #242
+* Allow configuration of ErrorResponse and NoticeResponse logging #239
+* Update license header years to 2020 #236
+* Add a codec for BigInteger #233
+* Reinstantiate backpressure propagation to NettyInbound #231
+* Fix for concurrent exchanging on one client #230
+* Add support for RefCursor #229
+* Terminate Notification stream on disconnect #227
+* Capability to disable prepared statement caching #223
+* Insertion of too many rows do not complete #222
+* Upgrade to Testcontainers 1.12.4 #218
+* Enable Travis for pull requests #214
+* Migrate to Jenkins CI #213
+* On error not triggered when listen connection terminated #212
+* Simplify factory provider #210
+* Fails to startup with forceBinary=true using Spring Boot #208
+* rowsUpdated() returns more than one item. #207
+* Readme cleanup #206
+* Fix typo in project url #205
+* Enable consumption of REFCURSOR #173
+* Combine extended flow messages into a single composite message #138
+* Send cancelation packet to Postgres server in order to interrupt running query  #121
+
+0.8.7.RELEASE
+-----------------------------------------
+* Upgrade to R2DBC SPI 0.8.4.RELEASE #387
+* Unable to insert a new entity in a table containing name "returning" #377
+* Update license headers to report the inception year instead of start-end range #369
+* Decoding CopyOutResponse message does not comply with postgres documentation #367
+* Make JsonIntegrationTests extend AbstractIntegrationTests #364
+* Upgrade to Testcontainers 1.15.0 #363
+* Unable to decode array_agg(varchar) type. #361
+* Map postgres' 40001 error code to PostgresqlRollbackException #355
+* Add BigDecimal array codec #349
+* Refactor dead if branch into single return flow #348
+* Add Interval Codec #345
+* Extended flow queries hang with pgpool 4.1 #341
+* Accept SSL certificates by providing a URL to use cert from within a jar #313
+
+0.8.6.RELEASE
+-----------------------------------------
+* Upgrade dependencies #343
+* Replace casts to ByteBuffer after ByteBuffer.flip #340
+* Introduce connection context to allow correlation of log statements to the actual connection #339
+* Use RoundRobinInetAddressResolver for DNS resolution #338
+* RowMetadata.getColumnNames() iteration order doesn't match result set column order #337
+* Add UUID array codec #336
+* Occasional delays caused by TCP NoDelay config option defaulting to false #334
+* Upgrade to R2DBC SPI 0.8.3 #333
+* Use GitHub actions to deploy to OSS Sonatype/Maven Central #325
+* add capability to log query parameters (bindings) values #278
+* Combine extended flow messages into a single composite message #138
+
+0.8.5.RELEASE
+-----------------------------------------
+* Use detached byte buffers by default for decoded values #330
+* JsonCodec.encode(…) doesn't release input buffer #329
+* Upgrade to Assertj 3.17.2 #328
+* Upgrade to Netty 4.1.51.Final #327
+* Upgrade to Reactor Dysprosium SR11 #326
+* Issue parsing UTC timestamptz from CockroachDB #320
+* Possibility to configure LoopResources  inside ReactorNettyClient  #319
+* Add priority to EnumCodec registrar #310
+* EnumCodec's canDecode method fix (Issue #302) #308
+* Support for geospatial types - point, line, box, polygon etc #306
+* NullPointerExceptionwhen adding SSL handler via SSLTunnelHandlerAdapter #304
+* Add priority to EnumCodec registrar #303
+* EnumCodec decoding fails if the requested value type is Object #302
+* Row.decode(…) fails for enum type with IllegalArgumentException: 72093 is not a valid object id #301
+* Support for geospatial types - point, line, box, polygon etc #282
+
+0.8.4.RELEASE
+-----------------------------------------
+* Ensure no snapshots get referenced in release builds #299
+* Add config options for TCP nodelay and keepalive #296
+* Add support for SSL tunnels #295
+* Support for "time with time zone" type #294
+* Query doesn't complete #292
+* Upgrade to Reactor Dysprosium SR9 #291
+* Upgrade to Reactor Dysprosium SR8 #289
+* SSL Mode configuration is not working anymore with v0.8.3.RELEASE #286
+* Infinite drainLoop call in BackendMessageSubscriber #285
+* Add support for point type #283
+* Connection in unstable state when rollback after a failed commit #274
+* Add codec for Postgres enumerated types #244
+
+0.8.3.RELEASE
+-----------------------------------------
+* Upgrade dependencies #281
+* Introduce OptionMapper for option mapping #279
+* Add BlockHound to integration tests #276
+* Static initializers of StartupMessage cause blocking calls #275
+* Adds capability to specify connections options via URL #273
+* Add support for providing "search_path" connection option #271
+* Support hstore as default codec #268
+* Capability to disable prepared statement caching #223
+* Simplify factory provider #210
+
+0.8.2.RELEASE
+-----------------------------------------
+* Upgrade build plugin and test dependencies #266
+* Upgrade to netty 4.1.47.Final #265
+* Upgrade to Reactor Dysprosium-SR6 #264
+* Backport usage of testcontainers 1.13.0 #262
+* Stage releases directly on maven central #260
+* Default fetch size #256
+* IllegalStateException when reading empty byte array #253
+* Fetch size implementation #245
+* Add fast-path emission of incoming frames #243
+* High CPU usage when cancelled query #242
+* Enable consumption of REFCURSOR #173
+
+0.8.1.RELEASE
+-----------------------------------------
+* Upgrade dependencies #238
+* Update license header years to 2020 #236
+* Add a codec for BigInteger #233
+* ConcurrentHashModification at IndefiniteStatementCache #232
+* Reinstantiate backpressure propagation to NettyInbound #231
+* Fix for concurrent exchanging on one client #230
+* Capability to disable prepared statement caching #223
+* Insertion of too many rows do not complete #222
+* Upgrade to Testcontainers 1.12.4 #218
+* Backport Travis support to 0.8.x #217
+* Backport Jenkins to 0.8.x #216
+* On error not triggered when listen connection terminated #212
+* Fails to startup with forceBinary=true using Spring Boot #208
+* rowsUpdated() returns more than one item #207
+* Readme cleanup #206
+* Fix typo in project url #205
+* Reduce allocations #138
+
+0.8.0.RELEASE
+-----------------------------------------
+* Upgrade to Reactor Dysprosium SR2 #204
+* Upgrade to R2DBC SPI 0.8.0.RELEASE #202
+* Add query logger #201
+* Drop SLF4J in favor of Reactor's Logger utilities #200
+* Fix instant handling #196
+* Add an auth-config for local connections in testing #195
+* Invalid listen example in README #192
+* Add customizeSslContext(Consumer<SslContextBuilder>) #191
+*  Default to scalar values for LOB column retrieval according to spec changes #190
+* Upgrade to Testcontainers 1.12.3 #189
+* SSL disabled exceptions not propagated in connect phase #187
+* Enable BlobCodec and ClobCodec for binary usage #186
+* Split unit test and integration test execution #185
+* Cannot decode value of type java.net.InetAddress #184
+* DB exceptions are not handled correctly by PostgresqlConnection for INSERT ... RETURNING in transaction #182
+* Support unix domain socket connections #181
+* Relax requirement for password #178
+* Statement execution gets stuck when connection gets disconnected #177
+* Add ConnectionFactory option for binaryTransfer (forceBinary) #160
+* Add LogicalDecoding #18
+
+0.8.0.RC2
+------------------
+* Revert reactor-netty exclusions #175
+* Added documentation for options parameter in ConnectionConfiguration #174
+
+0.8.0.RC1
+------------------
+* Upgrade to SCRAM Client 2.1 #171
+* Add automatic module name #170
+* Upgrade to Reactor Dysprosium GA #169
+* Edit documentation #166
+* Memory leak fixes #165
+* Remove dependencies to Spring Boot #163
+* Exclude not-required dependencies #162
+* Implement JSON and JSONB codecs #161
+* Allow type conversion across codecs #159
+* Add JMH benchmarks and apply optimizations #158
+* Fix memory leaks in BackendMessageEnvelopeDecoder #157
+* Adapt to Row.get(int)/get(String) in PostgresqlRow #156
+* Add binary codecs for BYTEA. #155
+* Remove repositories declaration from published pom #154
+* Fix of IllegalReferenceCountException on discardReadComponents call #153
+* BackendMessageEnvelopeDecoder. fails with IllegalReferenceCountException: refCnt: 0 #151
+* Expose Connection metadata #150
+* Adapt to Statement.bind and Row.get by name #149
+* ExtendedQueryPostgresqlStatement emits Result before processing execution errors #148
+* Adapt to SPI changes for IsolationLevel and AutoCommit #147
+* Upgrade to Reactor Dysprosium RC1 #146
+* Rename …Example to …TestKit. #143
+* Add support for setting runtime parameters for new connections #142
+* PostgresqlConnection does not rollback if transaction status is FAILED #139
+* Enable StringArrayCodec for binary usage #135
+* Implement validate() SPI #133
+* RuleBasedCollector is blocking #131
+* Upgrade to Postgres JDBC 42.2.6 #130
+* Upgrade to testcontainers-java 1.12.0 #129
+* Upgrade to maven-compiler-plugin 3.8.1 #128
+* Upgrade to Mockito 3.0.0 #127
+* PostgresConnectionFactoryProvider.supports(…) is too restrictive #125
+* Deprecate LEGACY_POSTGRESQL_DRIVER #124
+* No exception without calling getRowsUpdated/map on PostgresqlResult fix #119
+* Sql exceptions handling #118
+* Support "postgres" driver #117
+* Fix canDecode for arrays #115
+* Avoid array index out of bounds on missing result size in tag #114
+* Array codecs missing during `canDecode(..)` implementation #113
+* Fix for multiple usage of same parameter in extended query #111
+* Blob encoding fix #110
+* DateCodec delegation to InstantCodec cannot read columns with date type  #109
+* Weird codec issue when running concurrent queries #107
+* Update connection example in README #106
+* Use R2DBC Exception hierarchy for driver exceptions #98
+* Add CodecRegistrar extension point to register codecs provided by 3rd-party libraries #95
+* Row.get seems to mix up columns #86
+* TLS connectivity #59
+* Added support for listening to notifications #52
+
+0.8.0.M8
+------------------
+* Remove Enum Codec #103
+* Implement RowMetadata.getColumnNames() #102
+* Row.get fails for array-typed values #67
+* Multi-dimensional arrays #42, #54
+* handle() instead of flatMap() #97
+* Treat port as optional #93, #100
+* Check for data before decoding array elements #89, #90
+* Infinite result execution #81, #85
+* Prefer binary transfer #21, #76
+* Error response possibly lost #16, #75
+* Improve Authentication Error Message #34, #72
+* BLOB/CLOB Support #99
+* ConnectionFactoryProvider.getDriver() #77, #78
+
+1.0.0.M7
+------------------
+* Update changelog for M7 #73
+* ConnectionFactory Discovery #66
+* Improved ColumnMetadata #64
+* SCRAM authentication #63
+* Reinstated generated value retrieval #60
+* Documentation improvements #57, #68
+* ConnectionTimeout Configuration #56
+* Multi-dimensional array support #53
+* Nullability enforcement returns accurate exception #51
+* Support multiline queries #50
+* BackendMessageDecoder memory leak #49
+* Support for BPCHAR #47
+* Array type construction #40
+* Configure a schema #37
+* Improve support for multiple authentication mechanisms #19
+* More Stream removal #12
+
+1.0.0.M6
+------------------
+* Initial array codecs
+* Quick connection close #33
+* Handle authentication error when creating. onnections #30
+* Complete subscribers when channel is unregistered #29
+* Pipelined requests #28
+* Additional boolean text options #27
+* Type OID issues #25
+* More stream removal #24, #32
+* Propagage mapping error upstream #17
+
+1.0.0.M4
+------------------
+* Decode VARCHAR properly #9
+* Decode best-effort Object.class #8
+* Reduce Stream Usage #5
+* Initialize PostgresqlServerException with reason and SQL state #4
+* Upgrade to Reactor Californium #1

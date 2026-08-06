@@ -389,6 +389,8 @@ allprojects {
             }
             format("markdown") {
                 target("**/*.md")
+                // r2dbc-postgresql is a Maven-built subproject with upstream-formatted docs
+                filter { exclude("r2dbc-postgresql/**") }
                 endWithNewline()
             }
         }

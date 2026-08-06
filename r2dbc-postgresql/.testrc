@@ -1,0 +1,9 @@
+preference=external
+host=11.239.69.226
+server=11.239.69.226
+port=55152
+database=test
+username=test
+password=test
+privilegedUser=postgres
+privilegedPassword=postgres

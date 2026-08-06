@@ -1,0 +1,71 @@
+/*
+ * Copyright 2017 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package io.r2dbc.postgresql.codec;
+
+import io.netty.buffer.ByteBuf;
+import io.r2dbc.postgresql.client.EncodedParameter;
+import io.r2dbc.postgresql.message.Format;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * Encodes and decodes objects.
+ */
+public interface Codecs {
+
+    /**
+     * Decode a data to a value.
+     *
+     * @param buffer   the {@link ByteBuf} to decode
+     * @param dataType the data type of the data
+     * @param format   the format of the data
+     * @param type     the type to decode to
+     * @param <T>      the type of item being returned
+     * @return the decoded value
+     * @throws IllegalArgumentException if {@code format} or {@code type} is {@code null}
+     */
+    <T> @Nullable T decode(@Nullable ByteBuf buffer, int dataType, Format format, Class<? extends T> type);
+
+    /**
+     * Encode a value.
+     *
+     * @param value the value to encode
+     * @return the encoded value
+     * @throws IllegalArgumentException if {@code value} is {@code null}
+     */
+    EncodedParameter encode(Object value);
+
+    /**
+     * Encode a {@code null} value.
+     *
+     * @param type the type to encode
+     * @return the encoded value
+     * @throws IllegalArgumentException if {@code type} is {@code null}
+     */
+    EncodedParameter encodeNull(Class<?> type);
+
+    /**
+     * Returns the preferred Java type for a given data type and format.
+     *
+     * @param dataType the data type fo the data
+     * @param format   the format of the data
+     * @return the preferred Java type for a given data type and format
+     * @throws IllegalArgumentException if {@code format} is {@code null}
+     */
+    @Nullable
+    Class<?> preferredType(int dataType, Format format);
+
+}
