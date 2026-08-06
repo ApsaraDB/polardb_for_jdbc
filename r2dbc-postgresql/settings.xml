@@ -8,5 +8,15 @@
 			<username>${env.ORG_GRADLE_PROJECT_sonatypeUsername}</username>
 			<password>${env.ORG_GRADLE_PROJECT_sonatypePassword}</password>
 		</server>
+		<server>
+			<id>sonatype-nexus-staging</id>
+			<username>${env.ORG_GRADLE_PROJECT_sonatypeUsername}</username>
+			<password>${env.ORG_GRADLE_PROJECT_sonatypePassword}</password>
+		</server>
+		<server>
+			<id>sonatype-nexus-snapshots</id>
+			<username>${env.ORG_GRADLE_PROJECT_sonatypeUsername}</username>
+			<password>${env.ORG_GRADLE_PROJECT_sonatypePassword}</password>
+		</server>
 	</servers>
 </settings>
