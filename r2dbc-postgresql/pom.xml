@@ -345,6 +345,10 @@
                 </executions>
             </plugin>
 
+            <!-- Note: sources/javadoc jars are produced by the explicit CLI goals
+                 "source:jar javadoc:jar" used by the release platform. The executions
+                 are NOT bound here on purpose: binding them would run the plugins a
+                 second time during package and fail with "duplicated artifacts attached". -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
@@ -361,28 +365,12 @@
                     <doclint>-missing</doclint>
                     <javadocVersion>1.8</javadocVersion>
                 </configuration>
-                <executions>
-                    <execution>
-                        <id>attach-javadocs</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
                 <version>3.3.0</version>
-                <executions>
-                    <execution>
-                        <id>attach-javadocs</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
 
             <plugin>
