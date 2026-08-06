@@ -289,6 +289,10 @@
                         <arg>-Xlint:-processing</arg>
                         <arg>-Xlint:-serial</arg>
                     </compilerArgs>
+                    <!-- Suppress the JDK-8-only warning "unknown enum constant ElementType.MODULE"
+                         (emitted when reading annotations of JDK 9+ dependency jars; not covered
+                         by any -Xlint sub-option), otherwise it breaks -Werror builds on JDK 8. -->
+                    <compilerArgument>-nowarn</compilerArgument>
                     <showWarnings>true</showWarnings>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
