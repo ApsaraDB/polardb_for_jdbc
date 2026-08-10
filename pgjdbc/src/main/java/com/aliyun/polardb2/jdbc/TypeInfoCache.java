@@ -7,6 +7,7 @@ package com.aliyun.polardb2.jdbc;
 
 import static com.aliyun.polardb2.util.internal.Nullness.castNonNull;
 
+import com.aliyun.polardb2.PGCompositeField;
 import com.aliyun.polardb2.core.BaseConnection;
 import com.aliyun.polardb2.core.BaseStatement;
 import com.aliyun.polardb2.core.Oid;
@@ -24,9 +25,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -93,6 +96,11 @@ public class TypeInfoCache implements TypeInfo {
   private final Map<Integer, int @Nullable []> oidToCompositeFieldOids =
       new ConcurrentHashMap<Integer, int @Nullable []>();
   private @Nullable PreparedStatement getCompositeFieldOidsStatement;
+  // POLAR: composite type OID -> field descriptions (attname/atttypid/attnum, ordered by
+  // attnum). Cache for getCompositeFieldDescriptions. An empty list marks "no fields".
+  private final Map<Integer, List<PGCompositeField>> oidToCompositeFields =
+      new ConcurrentHashMap<Integer, List<PGCompositeField>>();
+  private @Nullable PreparedStatement getCompositeFieldDescStatement;
   private final ResourceLock lock = new ResourceLock();
 
   // basic pg types info:
@@ -669,6 +677,51 @@ public class TypeInfoCache implements TypeInfo {
       // Cache even empty result (as zero-length) to avoid repeated queries.
       oidToCompositeFieldOids.put(compositeOid, result);
       return result.length == 0 ? null : result;
+    }
+  }
+
+  /**
+   * POLAR: Return the field descriptions (attname, atttypid, attnum) of a composite type,
+   * ordered by attnum. Results are cached per composite type OID. This backs the public
+   * API {@code PGConnection.getCompositeTypeFields(String)} which lets application
+   * frameworks map Java bean fields to composite-type fields by name.
+   */
+  @Override
+  public @Nullable List<PGCompositeField> getCompositeFieldDescriptions(int compositeOid)
+      throws SQLException {
+    if (compositeOid == Oid.UNSPECIFIED) {
+      return null;
+    }
+    List<PGCompositeField> cached = oidToCompositeFields.get(compositeOid);
+    if (cached != null) {
+      return cached.isEmpty() ? null : cached;
+    }
+    try (ResourceLock ignore = lock.obtain()) {
+      if (getCompositeFieldDescStatement == null) {
+        String sql = "SELECT a.attname, a.atttypid, a.attnum FROM pg_catalog.pg_attribute a"
+            + " JOIN pg_catalog.pg_type t ON t.typrelid = a.attrelid"
+            + " WHERE t.oid = ? AND a.attnum > 0 AND NOT a.attisdropped"
+            + " ORDER BY a.attnum";
+        getCompositeFieldDescStatement = conn.prepareStatement(sql);
+      }
+      getCompositeFieldDescStatement.setInt(1, compositeOid);
+      // Go through BaseStatement to avoid transaction start.
+      if (!((BaseStatement) getCompositeFieldDescStatement)
+          .executeWithFlags(QueryExecutor.QUERY_SUPPRESS_BEGIN)) {
+        throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
+      }
+      ResultSet rs = castNonNull(getCompositeFieldDescStatement.getResultSet());
+      List<PGCompositeField> fields = new ArrayList<PGCompositeField>();
+      while (rs.next()) {
+        fields.add(new PGCompositeField(
+            castNonNull(rs.getString(1), "attname"),
+            (int) rs.getLong(3),
+            (int) rs.getLong(2)));
+      }
+      rs.close();
+      // Cache even empty result to avoid repeated queries.
+      oidToCompositeFields.put(compositeOid, fields);
+      return fields.isEmpty() ? null : fields;
     }
   }
 

@@ -18,6 +18,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import java.sql.Array;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -43,6 +44,35 @@ public interface PGConnection {
    * @see java.sql.Connection#createArrayOf(String, Object[])
    */
   Array createArrayOf(String typeName, @Nullable Object elements) throws SQLException;
+
+  /**
+   * POLAR: Return the ordered field descriptions of a composite (record) type.
+   *
+   * <p>The standard JDBC API carries only positionally ordered values across
+   * {@code createStruct}/{@code getAttributes}, so neither the driver nor the
+   * application can reorder fields by name without knowing both sides' field
+   * definitions. This method exposes the database side of that information: the
+   * fields of {@code typeName} in their server-defined order
+   * ({@code pg_attribute.attnum}), so application frameworks can combine it with
+   * Java reflection on their bean classes, match fields by name, and produce a
+   * value array ordered according to the database schema - for both writes
+   * ({@code createStruct}) and reads ({@code Struct.getAttributes}).</p>
+   *
+   * <p>If {@code typeName} is an Oracle synonym, it is resolved to the actual
+   * type via {@code all_synonyms} before the metadata is queried. Results are
+   * cached per connection.</p>
+   *
+   * @param typeName
+   *          The SQL name of the composite type (optionally schema-qualified),
+   *          or a synonym referring to one. Must not be {@code null}.
+   * @return the fields of the composite type in server-defined order, or
+   *         {@code null} if the type does not exist or is not a composite type.
+   * @throws SQLException
+   *           If for some reason the metadata cannot be retrieved.
+   * @see PGCompositeField
+   * @since 42.5.7.0.15
+   */
+  @Nullable List<PGCompositeField> getCompositeTypeFields(String typeName) throws SQLException;
 
   /**
    * This method returns any notifications that have been received since the last call to this

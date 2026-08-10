@@ -7,6 +7,7 @@ package com.aliyun.polardb2.jdbc;
 
 import static com.aliyun.polardb2.util.internal.Nullness.castNonNull;
 
+import com.aliyun.polardb2.PGCompositeField;
 import com.aliyun.polardb2.PGNotification;
 import com.aliyun.polardb2.PGProperty;
 import com.aliyun.polardb2.copy.CopyManager;
@@ -77,6 +78,7 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -1545,6 +1547,39 @@ public class PgConnection implements BaseConnection {
   public Struct createStruct(String typeName, Object[] attributes) throws SQLException {
     checkClosed();
     return new PgStruct(typeName, attributes);
+  }
+
+  /**
+   * POLAR: Expose the field metadata of a composite type so application frameworks
+   * can map Java bean fields to composite-type fields by name. The type name is
+   * resolved the same way as {@link #createStruct}/{@code getAttributes} do it,
+   * including Oracle synonym resolution via all_synonyms inside
+   * {@link TypeInfoCache#getPGType(String)}.
+   */
+  @Override
+  public @Nullable List<PGCompositeField> getCompositeTypeFields(String typeName)
+      throws SQLException {
+    checkClosed();
+
+    if (typeName == null || typeName.isEmpty()) {
+      throw new PSQLException(GT.tr("A composite type name must be provided."),
+          PSQLState.INVALID_NAME);
+    }
+
+    final TypeInfo typeInfo = getTypeInfo();
+
+    // Same lookup order as PgCompositeObject.getAttributes: lower-cased name first
+    // (Oracle mode stores unquoted identifiers in lower case), then the verbatim
+    // name. getPGType falls back to all_synonyms when pg_type has no match.
+    int typeOid = typeInfo.getPGType(typeName.toLowerCase(Locale.ROOT));
+    if (typeOid == Oid.UNSPECIFIED) {
+      typeOid = typeInfo.getPGType(typeName);
+    }
+    if (typeOid == Oid.UNSPECIFIED) {
+      return null;
+    }
+
+    return typeInfo.getCompositeFieldDescriptions(typeOid);
   }
 
   @SuppressWarnings({ "rawtypes", "unchecked" })

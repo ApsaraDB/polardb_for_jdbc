@@ -69,6 +69,18 @@ public interface TypeInfo {
   int @Nullable [] getCompositeFieldTypeOids(int compositeOid) throws SQLException;
 
   /**
+   * POLAR: Return the field descriptions (attname, atttypid, attnum) of a composite type,
+   * ordered by attnum. Exposed so application frameworks can map Java bean fields to
+   * composite-type fields by name (see {@link com.aliyun.polardb2.PGConnection#getCompositeTypeFields(String)}).
+   *
+   * @param compositeOid the OID of the composite type
+   * @return list of field descriptions ordered by attnum, or null if not a composite type
+   * @throws SQLException if an error occurs when querying attribute metadata
+   */
+  java.util.@Nullable List<com.aliyun.polardb2.PGCompositeField> getCompositeFieldDescriptions(
+      int compositeOid) throws SQLException;
+
+  /**
    * Look up the oid of an array's base type given the array's type oid.
    *
    * @param oid the array type's OID

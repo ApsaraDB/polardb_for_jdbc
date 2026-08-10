@@ -286,6 +286,13 @@ public abstract class AbstractArraysTest<A> {
     /**
      * {@inheritDoc}
      */
+    public java.util.List<com.aliyun.polardb2.PGCompositeField> getCompositeTypeFields(String typeName) {
+      throw new UnsupportedOperationException();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public void cancelQuery() throws SQLException {
       throw new UnsupportedOperationException();
     }
