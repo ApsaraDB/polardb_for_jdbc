@@ -5,7 +5,9 @@
 package com.aliyun.polardb2.test.polarora;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 import com.aliyun.polardb2.test.TestUtil;
 
@@ -15,6 +17,7 @@ import org.junit.Test;
 
 import java.sql.CallableStatement;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
@@ -80,6 +83,20 @@ public class InoutParamMissingRegisterOutTest {
             + "  p_inout := p_inout + 100;\n"
             + "  p_msg   := 'inout=' || p_inout;\n"
             + "END;");
+    stmt.execute("CREATE TABLE unregistered_out_log (value NUMBER)");
+    stmt.execute("CREATE OR REPLACE PACKAGE unregistered_out_pkg IS\n"
+        + "  PROCEDURE office_insert_fnd_atm(\n"
+        + "    p_record_id OUT NUMBER, p_value IN NUMBER);\n"
+        + "END;");
+    stmt.execute(
+        "CREATE OR REPLACE PACKAGE BODY unregistered_out_pkg IS\n"
+            + "PROCEDURE office_insert_fnd_atm("
+            + "p_record_id OUT NUMBER, p_value IN NUMBER) IS\n"
+            + "BEGIN\n"
+            + "  p_record_id := p_value + 100;\n"
+            + "  INSERT INTO unregistered_out_log VALUES (p_value);\n"
+            + "END;\n"
+            + "END;");
     stmt.close();
   }
 
@@ -88,11 +105,77 @@ public class InoutParamMissingRegisterOutTest {
     if (conn != null) {
       try (Statement stmt = conn.createStatement()) {
         stmt.execute("DROP PROCEDURE IF EXISTS inout_missing_register");
+        stmt.execute("DROP PACKAGE IF EXISTS unregistered_out_pkg");
+        stmt.execute("DROP TABLE IF EXISTS unregistered_out_log");
       } catch (SQLException ignore) {
         // ignore tear-down failures
       }
       conn.close();
     }
+  }
+
+  private void assertUnregisteredOutIsHidden(String sql, int value)
+      throws SQLException {
+    try (CallableStatement cs = conn.prepareCall(sql)) {
+      // MyBatis treats a parameter without mode=OUT as an IN parameter.
+      cs.setInt(1, 0);
+      cs.setInt(2, value);
+      assertFalse("Oracle does not expose the OUT row as a ResultSet",
+          cs.execute());
+      assertNull(cs.getResultSet());
+    }
+
+    try (Statement st = conn.createStatement();
+        ResultSet rs = st.executeQuery(
+            "SELECT count(*) FROM unregistered_out_log WHERE value = "
+                + value)) {
+      rs.next();
+      assertEquals("The procedure side effect must still happen", 1,
+          rs.getInt(1));
+    }
+  }
+
+  /** Exact customer shape: native CALL, named arguments, unregistered OUT. */
+  @Test
+  public void nativeCallHidesUnregisteredOutResult() throws SQLException {
+    assertUnregisteredOutIsHidden(
+        "CALL unregistered_out_pkg.office_insert_fnd_atm("
+            + "p_record_id => ?, p_value => ?)", 1);
+    System.out.println(
+        "[REGRESSION-85310396] native CALL unregistered OUT row hidden");
+  }
+
+  /** JDBC escape CALL must have the same Oracle-compatible behavior. */
+  @Test
+  public void jdbcEscapeCallHidesUnregisteredOutResult() throws SQLException {
+    assertUnregisteredOutIsHidden(
+        "{ call unregistered_out_pkg.office_insert_fnd_atm(?, ?) }", 2);
+    System.out.println(
+        "[REGRESSION-85310396] JDBC escape CALL OUT row hidden");
+  }
+
+  /** Anonymous blocks remain covered by the same compatibility contract. */
+  @Test
+  public void anonymousBlockHidesUnregisteredOutResult() throws SQLException {
+    assertUnregisteredOutIsHidden(
+        "BEGIN unregistered_out_pkg.office_insert_fnd_atm(?, ?); END;", 3);
+    System.out.println(
+        "[REGRESSION-85310396] anonymous block OUT row hidden");
+  }
+
+  /** A registered OUT parameter remains available through its getter. */
+  @Test
+  public void registeredOutRemainsReadable() throws SQLException {
+    try (CallableStatement cs = conn.prepareCall(
+        "CALL unregistered_out_pkg.office_insert_fnd_atm(?, ?)")) {
+      cs.registerOutParameter(1, Types.NUMERIC);
+      cs.setInt(2, 4);
+      assertFalse(cs.execute());
+      assertNull(cs.getResultSet());
+      assertEquals(104, cs.getInt(1));
+    }
+    System.out.println(
+        "[REGRESSION-85310396] registered OUT remains readable");
   }
 
   /**

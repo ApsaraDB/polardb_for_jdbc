@@ -47,6 +47,8 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   private final boolean outParamBeforeFunc;
   /* POLAR: DO anonymous block with $N INOUT parameters */
   private final boolean isDoBlock;
+  /* POLAR: CALL statements return OUT parameters as a synthetic result row. */
+  private final boolean isProcedureCall;
   /* POLAR: Oracle sequence pseudocolumn (e.g. seq.nextval / seq.currval) */
   private final boolean isSequencePseudocol;
   // functionReturnType contains the user supplied value to check
@@ -71,6 +73,10 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
     this.isFunction = preparedQuery.isFunction;
     this.outParamBeforeFunc = preparedQuery.outParamBeforeFunc;
     this.isDoBlock = preparedQuery.isDoBlock;
+    String nativeSql = preparedQuery.query.getNativeSql().trim();
+    this.isProcedureCall = nativeSql.length() > 4
+        && nativeSql.regionMatches(true, 0, "call", 0, 4)
+        && Character.isWhitespace(nativeSql.charAt(4));
     this.isSequencePseudocol = preparedQuery.isSequencePseudocol;
 
     /* POLAR: get the unamed SQL */
@@ -172,16 +178,16 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
       boolean hasResultSet = super.executeWithFlags(flags);
       int[] functionReturnType = this.functionReturnType;
-      /* POLAR: For DO anonymous blocks, fall through even when no out parameter was
-       * registered (returnTypeSet == false). The server echoes the INOUT parameter
-       * values back as a one-row result set, but Oracle never exposes a result set
-       * for an anonymous block. Consume it into callResult and report "no results"
-       * so frameworks like MyBatis (<select statementType="CALLABLE"> whose params are
-       * all mode=IN, hence registerOutParameter is never called) behave the same as
-       * with the Oracle driver instead of failing with
-       * "A query was run and no Result Maps were found for the Mapped Statement". */
+      /* POLAR: Fall through for CALL statements even when no out parameter was
+       * registered (returnTypeSet == false). The server returns actual OUT/INOUT
+       * parameters as a one-row result set, including parameters that the caller
+       * bound only as IN. Oracle executes such calls but never exposes that row as
+       * a regular result set. Consume it into callResult and report "no results" so
+       * frameworks like MyBatis behave the same as with the Oracle driver instead
+       * of requiring an unrelated result map. Keep exposing results for JDBC calls
+       * rewritten to SELECT, since those are regular function result sets. */
       if (!isFunction || functionReturnType == null
-          || (!returnTypeSet && !isDoBlock)) {
+          || (!returnTypeSet && !isDoBlock && !isProcedureCall)) {
         return hasResultSet;
       }
 
