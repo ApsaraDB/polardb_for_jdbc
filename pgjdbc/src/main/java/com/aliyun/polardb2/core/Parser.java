@@ -1665,6 +1665,19 @@ public class Parser {
 
     // We can only legally end in a couple of states here.
     if (i == len && !syntaxError) {
+      /*
+       * Oracle JDBC accepts an unterminated JDBC CALL escape, for example the SQL
+       * emitted by legacy MyBatis mappings: "{? = call package.function(?)".
+       * Limit this tolerance to that exact MyBatis prefix, so other malformed
+       * JDBC escape syntaxes continue to be rejected.
+       */
+      if (state == 7 && jdbcSql.length() >= 10
+          && jdbcSql.startsWith("{? = ")
+          && jdbcSql.regionMatches(true, 5, "call", 0, 4)
+          && Character.isWhitespace(jdbcSql.charAt(9))) {
+        endIndex = len;
+        state = 8;
+      }
       if (state == 1) {
         // Not an escaped syntax.
 

@@ -142,6 +142,21 @@ public class CallFunction {
     }
   }
 
+  /**
+   * Oracle JDBC accepts the missing closing brace in legacy MyBatis CALL mappings.
+   * Keep the same tolerance for a function return value in callFunctionMode.
+   */
+  @Test
+  public void testFunctionCallWithoutClosingEscapeBrace() throws Exception {
+    try (CallableStatement cstmt = conn.prepareCall("{? = call abc2(?, ?)")) {
+      cstmt.registerOutParameter(1, Types.NUMERIC);
+      cstmt.setInt(2, 2);
+      cstmt.setInt(3, 1);
+      cstmt.execute();
+      Assert.assertEquals(3, cstmt.getInt(1));
+    }
+  }
+
   @Test
   public void testGetColumns3() throws Exception {
 

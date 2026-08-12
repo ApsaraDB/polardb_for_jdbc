@@ -159,6 +159,16 @@ public class ParserTest {
     assertEquals("exec mysumfunc(?,?)", Parser.modifyJdbcCall("{ ? = call mysumfunc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, true).getSql());
     assertEquals("exec mysumfunc(?,?)", Parser.modifyJdbcCall("{ ? = call mysumfunc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL_IF_NO_RETURN, true).getSql());
     assertEquals("exec pack_getValue()", Parser.modifyJdbcCall("{ ? = call pack_getValue}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, true).getSql());
+    assertEquals("exec xp_digital_utils_pkg.add_digital_attachment(?,?,?,?,?,?)",
+        Parser.modifyJdbcCall("{? = call xp_digital_utils_pkg.add_digital_attachment(?,?,?,?,?,?)",
+            true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, true).getSql());
+    try {
+      Parser.modifyJdbcCall("{ ?= call getString (?) ", true, ServerVersion.v11.getVersionNum(),
+          3, EscapeSyntaxCallMode.CALL, true);
+      Assert.fail("A non-MyBatis unterminated JDBC escape must be rejected");
+    } catch (SQLException expected) {
+      // expected
+    }
     // No return placeholder -> CALL
     assertEquals("call myioproc(?,?)", Parser.modifyJdbcCall("{call myioproc(?,?)}", true, ServerVersion.v11.getVersionNum(), 3, EscapeSyntaxCallMode.CALL, true).getSql());
     // callFunctionMode=false: legacy path keeps CALL with placeholder injection
