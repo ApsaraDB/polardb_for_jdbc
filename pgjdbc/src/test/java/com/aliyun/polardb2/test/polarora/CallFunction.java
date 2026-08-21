@@ -737,6 +737,9 @@ public class CallFunction {
 
   /**
    * POLAR: Test DO block with executeUpdate() method.
+   * Oracle parity: ojdbc returns 1 from executeUpdate() for anonymous PL/SQL
+   * blocks, so the driver reports 1 (previously 0) to keep frameworks that gate
+   * on "success == 1" working after migration.
    */
   @Test
   public void testDoBlockWithExecuteUpdate() throws Exception {
@@ -744,7 +747,7 @@ public class CallFunction {
       cs.registerOutParameter(1, Types.NUMERIC);
       int updateCount = cs.executeUpdate();
 
-      assert updateCount == 0 : "Expected updateCount=0 but got " + updateCount;
+      assert updateCount == 1 : "Expected updateCount=1 (Oracle parity) but got " + updateCount;
       assert cs.getInt(1) == 777 : "Expected 777 but got " + cs.getObject(1);
     }
   }

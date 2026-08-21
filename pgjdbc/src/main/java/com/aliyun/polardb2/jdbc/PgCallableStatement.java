@@ -120,9 +120,27 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
   public int executeUpdate() throws SQLException {
     if (isFunction) {
       executeWithFlags(0);
-      return 0;
+      // POLAR: Oracle ojdbc returns 1 from executeUpdate() for anonymous PL/SQL
+      // blocks (begin...end / declare...begin...end); customer frameworks gate on
+      // "success == 1". Plain function-call escapes keep the legacy 0.
+      return isDoBlock ? 1 : 0;
     }
     return super.executeUpdate();
+  }
+
+  /**
+   * POLAR: mirror {@link #executeUpdate()} for the large-count variant. The generic
+   * path sends QUERY_NO_RESULTS, which desynchronizes the protocol for DO blocks
+   * (the server echoes INOUT values as a row) and can drop the connection; execute
+   * without that flag and apply the same Oracle-parity update count.
+   */
+  @Override
+  public long executeLargeUpdate() throws SQLException {
+    if (isFunction) {
+      executeWithFlags(0);
+      return isDoBlock ? 1 : 0;
+    }
+    return super.executeLargeUpdate();
   }
 
   @Override

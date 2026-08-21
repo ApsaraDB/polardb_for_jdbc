@@ -163,6 +163,15 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
     }
   }
 
+  /**
+   * POLAR: expose whether the prepared query is an Oracle-style anonymous PL/SQL
+   * block so the update-count Oracle-parity adjustment in PgStatement applies.
+   */
+  @Override
+  protected boolean isPolarAnonymousBlock() {
+    return preparedQuery.isDoBlock;
+  }
+
   @Override
   public long executeLargeUpdate() throws SQLException {
     try (ResourceLock ignore = lock.obtain()) {

@@ -549,6 +549,14 @@ public class PgStatement implements Statement, BaseStatement {
   public int getUpdateCount() throws SQLException {
     try (ResourceLock ignore = lock.obtain()) {
       checkClosed();
+      // POLAR: Oracle ojdbc returns 1 from executeUpdate() for anonymous PL/SQL
+      // blocks (begin...end / declare...begin...end). The server executes them as
+      // DO blocks and echoes INOUT values as a result set, so the generic paths
+      // below would report 0 (or -1); report 1 instead so frameworks that gate
+      // on "executeUpdate() == 1" behave identically after migration.
+      if (result != null && isPolarAnonymousBlock()) {
+        return 1;
+      }
       if (result == null || result.getResultSet() != null) {
         // If allowSelectInExecuteUpdate is enabled and we have a ResultSet,
         // return 0 instead of -1 for SELECT queries in executeUpdate
@@ -561,6 +569,16 @@ public class PgStatement implements Statement, BaseStatement {
       long count = result.getUpdateCount();
       return count > Integer.MAX_VALUE ? Statement.SUCCESS_NO_INFO : (int) count;
     }
+  }
+
+  /**
+   * POLAR: Whether the currently prepared query is an Oracle-style anonymous PL/SQL
+   * block. Overridden by prepared statements; plain statements return false.
+   *
+   * @return true if the query is a begin...end / declare...begin...end anonymous block
+   */
+  protected boolean isPolarAnonymousBlock() {
+    return false;
   }
 
   public boolean getMoreResults() throws SQLException {
@@ -1097,6 +1115,11 @@ public class PgStatement implements Statement, BaseStatement {
   public long getLargeUpdateCount() throws SQLException {
     try (ResourceLock ignore = lock.obtain()) {
       checkClosed();
+      // POLAR: same Oracle parity adjustment as getUpdateCount(): anonymous
+      // PL/SQL blocks report 1.
+      if (result != null && isPolarAnonymousBlock()) {
+        return 1;
+      }
       if (result == null || result.getResultSet() != null) {
         return -1;
       }
