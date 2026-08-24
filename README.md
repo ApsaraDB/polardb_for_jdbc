@@ -37,14 +37,14 @@ Add the following dependency to your `pom.xml`:
 <dependency>
     <groupId>com.aliyun</groupId>
     <artifactId>polardb</artifactId>
-    <version>42.5.7.0.15</version>
+    <version>42.5.7.0.16</version>
 </dependency>
 ```
 
 Or with Gradle:
 
 ```kotlin
-implementation("com.aliyun:polardb:42.5.7.0.15")
+implementation("com.aliyun:polardb:42.5.7.0.16")
 ```
 
 The precompiled driver (jar) can also be downloaded from the

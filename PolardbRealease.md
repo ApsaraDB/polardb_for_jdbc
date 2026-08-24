@@ -25,14 +25,14 @@ JDBC（Java Database Connectivity）为Java应用程序提供了访问数据�
 <dependency>
     <groupId>com.aliyun</groupId>
     <artifactId>polardb</artifactId>
-    <version>42.5.7.0.15</version>
+    <version>42.5.7.0.16</version>
 </dependency>
 ```
 
 Gradle 方式：
 
 ```kotlin
-implementation("com.aliyun:polardb:42.5.7.0.15")
+implementation("com.aliyun:polardb:42.5.7.0.16")
 ```
 
 #### 独立 jar 包下载
@@ -472,6 +472,37 @@ jdbc:poalardb://1.2.XX.XX:5432,2.3.XX.XX:5432/postgres?oracleCase=true
 ```
 
 ### 版本更新说明
+
+#### 版本42.5.7.0.16 (2026-08-24)
+
+**新增功能**
+
+*   复合类型字段元数据公开 API：新增 `PGConnection.getCompositeTypeFields(String)`，按数据库定义顺序（`pg_attribute.attnum`）返回复合类型字段列表（`attname`/`atttypid`/`attnum`），支持 synonym 解析与连接级缓存。框架层可结合 Java 反射按字段名安全映射，解决 Java 字段顺序与数据库 TYPE 定义顺序不一致时的错位风险（读写两方向通用）。
+    
+*   Oracle 元数据大小写兼容：新增连接参数 `oracleMetadataCase`，使 `DatabaseMetaData`/`ResultSetMetaData` 兼容 Oracle 大小写约定，并屏蔽 `rowid`/系统列。
+    
+*   NLS 会话初始化兼容：兼容 Oracle JDBC 按 JVM Locale 初始化 `NLS_LANGUAGE`/`NLS_TERRITORY` 的行为。
+    
+*   R2DBC 响应式驱动纳入仓库：新增 `r2dbc-polardb` 子项目（坐标 `com.aliyun:r2dbc-polardb:1.2.1`），Maven 独立构建，配置 Sonatype 快照/发布仓库（distributionManagement）与默认 GPG 签名，可独立发布至 Maven 中心仓库。
+    
+
+**缺陷修复**
+
+*   `executeUpdate()` 返回值对齐 Oracle：匿名 PL/SQL 块（`begin...end` / `declare...begin...end`）的 `executeUpdate`/`executeLargeUpdate` 返回 1（原为 0），依赖 `success == 1` 判定的框架逻辑迁移后正常工作；同时修复 `executeLargeUpdate` 在匿名块上因 `QUERY_NO_RESULTS` 标志导致协议失步、连接断开的问题。
+    
+*   修复带前置注释的 `CREATE PACKAGE` 语句被错误拆分：解析器关键字扫描受前置行注释干扰时，会按分号把 PACKAGE 拆成多条语句发送，服务端报 `missing semicolon`（客户 Flyway 迁移脚本真实复现并修复）。
+    
+*   CALL 语句未注册 OUT 列回收：`call proc(...)` 形式服务端回传的结果行被消费进 `callResult`，不再作为多余结果集暴露给应用层，对齐 Oracle 行为。
+    
+*   JDBC callable 转义缺失右花括号容错：`{? = call f(?, ?)`（缺结尾 `}`）的存量映射不再解析报错，对齐 ojdbc 容错行为。
+    
+
+**工程优化**
+
+*   r2dbc 子项目构建治理：解决 JDK 8 编译 `-Werror` 警告失败（`-nowarn`）；移除 source/javadoc 插件重复绑定（修复发布平台 `duplicated artifacts` 报错）；GPG 签名内嵌默认构建（Maven Central 强制每个产物带 `.asc`）。
+    
+*   补充端到端测试：复合类型字段元数据 API（7 用例）、匿名块 `executeUpdate` 返回值（4 用例）、callable 转义容错等。
+    
 
 #### 版本42.5.7.0.15 (2026-07-29)
 
