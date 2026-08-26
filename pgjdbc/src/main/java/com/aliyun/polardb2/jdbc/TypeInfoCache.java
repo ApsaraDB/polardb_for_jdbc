@@ -1382,6 +1382,73 @@ public class TypeInfoCache implements TypeInfo {
   }
 
   /**
+   * POLAR: concrete JDBC-&gt;OID mapping for pre-typed OUT parameter slots.
+   *
+   * <p>Mirrors the regular bind mapping ({@code PgPreparedStatement.setNull}) so
+   * behaviour stays consistent, with one deliberate difference: temporal types
+   * map to their concrete OIDs instead of UNSPECIFIED, because an unknown-typed
+   * PL/SQL OUT variable would coerce date-&gt;text via the session nls_date_format
+   * (lossy for RR/YY formats). Note this must NOT delegate to
+   * {@link #getOidFromSqlType(Integer)}: that is a metadata mapping whose table
+   * aliases collapse e.g. Types.VARCHAR to Oid.NAME, which breaks procedure
+   * resolution.</p>
+   */
+  @Override
+  public int getOutParameterBindOid(int sqlType) {
+    switch (sqlType) {
+      case Types.TINYINT:
+      case Types.SMALLINT:
+        return Oid.INT2;
+      case Types.INTEGER:
+        return Oid.INT4;
+      case Types.BIGINT:
+        return Oid.INT8;
+      case Types.REAL:
+        return Oid.FLOAT4;
+      case Types.DOUBLE:
+      case Types.FLOAT:
+        return Oid.FLOAT8;
+      case Types.NUMERIC:
+      case Types.DECIMAL:
+        return Oid.NUMERIC;
+      case Types.CHAR:
+        return Oid.BPCHAR;
+      case Types.VARCHAR:
+      case Types.LONGVARCHAR:
+        return conn.getStringVarcharFlag() ? Oid.VARCHAR : 0;
+      case Types.DATE:
+        return conn.isMapDateToTimestamp() ? Oid.TIMESTAMP : Oid.DATE;
+      case Types.TIMESTAMP:
+        return Oid.TIMESTAMP;
+      case Types.TIMESTAMP_WITH_TIMEZONE:
+        return Oid.TIMESTAMPTZ;
+      case Types.TIME:
+        return Oid.TIME;
+      case Types.TIME_WITH_TIMEZONE:
+        return Oid.TIMETZ;
+      case Types.BOOLEAN:
+      case Types.BIT:
+        return Oid.BOOL;
+      case Types.BINARY:
+      case Types.VARBINARY:
+      case Types.LONGVARBINARY:
+        return Oid.BYTEA;
+      case Types.BLOB:
+        return conn.getBlobAsBytea() ? Oid.BYTEA : Oid.OID;
+      case Types.CLOB:
+        return conn.getClobAsText()
+            ? (conn.getStringVarcharFlag() ? Oid.VARCHAR : 0)
+            : Oid.OID;
+      case Types.REF_CURSOR:
+        return Oid.REF_CURSOR;
+      default:
+        // No concrete OID (e.g. Types.OTHER): keep the legacy unknown bind so the
+        // server infers the variable type.
+        return 0;
+    }
+  }
+
+  /**
    * POLAR: Look up {@code pg_type.typcategory} for the given OID.
    *
    * <p>Result is cached. Returns {@code '\0'} when the OID is unknown or the

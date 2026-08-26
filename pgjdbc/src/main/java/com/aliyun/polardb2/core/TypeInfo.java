@@ -169,4 +169,21 @@ public interface TypeInfo {
 
   /* POLAR */
   Integer getOidFromSqlType(Integer sqlType);
+
+  /**
+   * POLAR: Map a JDBC {@link java.sql.Types} value to the concrete server OID to
+   * bind for a pre-typed OUT parameter slot (e.g. DO-block OUT variables).
+   *
+   * <p>Unlike {@link #getOidFromSqlType(Integer)} (a metadata mapping where
+   * TIMESTAMP/TIME collapse to the tz-qualified aliases) and unlike the regular
+   * bind path (where temporal types stay UNSPECIFIED so the server infers the
+   * column type), this mapping returns the exact OID matching the registered
+   * type, so a PL/SQL variable created for the parameter keeps that type and no
+   * lossy date-&gt;text coercion occurs.</p>
+   *
+   * @param sqlType the registered JDBC type ({@link java.sql.Types})
+   * @return the concrete server OID, or 0 ({@link Oid#UNSPECIFIED} semantics of
+   *         "no concrete type") when the type has no direct OID equivalent
+   */
+  int getOutParameterBindOid(int sqlType);
 }

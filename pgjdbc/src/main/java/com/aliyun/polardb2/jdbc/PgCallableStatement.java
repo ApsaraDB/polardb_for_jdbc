@@ -189,7 +189,26 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
         int paramCount = preparedParameters.getParameterCount();
         for (int i = 1; i <= paramCount; i++) {
           if (!preparedParameters.isParameterSet(i)) {
-            preparedParameters.setNull(i, 0);
+            // POLAR: bind NULL with the registered OUT type (if any) instead of
+            // unknown, so the server creates the PL/SQL OUT variable with the
+            // actual declared type. With an unknown-typed variable the server
+            // coerces date->text via the session nls_date_format inside pl_exec
+            // (CoerceViaIO), losing the century for RR/YY formats
+            // (1946 -> '06-Aug-46' -> 2046). A concrete bind type keeps the
+            // value typed end-to-end (kernel-verified: setNull(1, Types.DATE)
+            // returns 1946 correctly while unknown returns 2046).
+            // functionReturnType holds the normalized registered type (DATE is
+            // normalized to TIMESTAMP when mapDateToTimestamp is on), which is
+            // exactly what the concrete mapping expects.
+            int registered =
+                (i - 1 < functionReturnType.length) ? functionReturnType[i - 1] : 0;
+            // Resolve via the canonical TypeInfo mapping: concrete OIDs keep the
+            // PL/SQL OUT variable typed (unknown would trigger a lossy
+            // date->text CoerceViaIO under RR/YY session formats).
+            int oid = registered != 0
+                ? connection.getTypeInfo().getOutParameterBindOid(registered)
+                : 0;
+            preparedParameters.setNull(i, oid);
           }
         }
       }
